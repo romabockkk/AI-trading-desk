@@ -1,0 +1,93 @@
+
+# AI Trading Desk — Exchange Integration
+
+## 1. Exchange Priority
+
+Primary candidate: BingX Demo Environment.
+
+Alternative candidate: OKX Demo Trading.
+
+Bybit is explicitly excluded from this project.
+
+## 2. Initial Mode
+
+DEMO ONLY.
+
+The system must not place real-money orders.
+
+## 3. Integration Architecture
+
+Separate the following components:
+
+- Market Data Connector
+- Account Data Connector
+- Order Management Module
+- Position Monitor
+- Risk Validation Module
+- Trade Journal
+
+All exchange requests must pass through the appropriate validation layer.
+
+## 4. API Security
+
+- Never store API keys in GitHub.
+- Never paste API secrets into Claude conversations.
+- Use environment variables or a secure secrets manager.
+- Use separate demo credentials.
+- Use minimum required permissions.
+- Never enable withdrawals.
+- Do not expose credentials in logs.
+
+## 5. Order Safety
+
+Before every demo order:
+
+1. Verify exchange connectivity.
+2. Verify current market data.
+3. Verify trading pair and contract specifications.
+4. Confirm position size with Risk Manager.
+5. Confirm entry, stop loss, and take profit.
+6. Check that the order is not duplicated.
+7. Record the decision before submission.
+
+## 6. Position Monitoring
+
+After an order is accepted:
+
+- Verify exchange order ID.
+- Verify actual position size.
+- Verify stop loss status.
+- Verify take profit status.
+- Monitor open positions.
+- Record partial fills and execution errors.
+
+Never assume an order was successful without exchange confirmation.
+
+## 7. Emergency Protection
+
+Disable new orders if:
+- API connection fails.
+- Duplicate orders are detected.
+- Stop loss cannot be confirmed.
+- Account balance is inconsistent.
+- Market data is delayed.
+- Position size differs from approval.
+
+## 8. Future Live Trading
+
+Live trading must remain disabled until:
+
+- Demo testing is completed.
+- At least 100 demo trades are documented.
+- Performance is independently reviewed.
+- API permissions are audited.
+- Risk controls are verified.
+- The user explicitly approves live trading.
+
+## 9. Implementation Requirement
+
+Use official exchange API documentation.
+
+Verify current API endpoints, authentication, demo environment availability, rate limits, and supported order types before implementation.
+
+Never assume demo and live API endpoints are interchangeable.
