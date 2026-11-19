@@ -14,8 +14,8 @@ DEMO ONLY.
 - No real-money trading.
 - No live order execution.
 - No Bybit integration.
-- Initial exchange candidate: BingX Demo.
-- Alternative exchange candidate: OKX Demo.
+- Exchange: OKX Demo Trading (implemented).
+- Alternative exchange candidate: BingX Demo (not implemented).
 - Never request or expose API secrets in chat.
 
 ## Team
@@ -47,12 +47,29 @@ DEMO ONLY.
 - Record every demo trade, including losses.
 - Never enable live trading without explicit user approval.
 
+## Quick start (OKX Demo)
+
+```bash
+pip install -r requirements.txt
+python -m trading_desk backtest --days 365        # test the rules on history first
+python -m trading_desk cycle                      # one research cycle, analysis only (no orders)
+
+cp .env.example .env                              # add OKX *demo* API key / secret / passphrase
+python -m trading_desk status                     # verify demo account, protections, journal
+python -m trading_desk cycle --execute            # asks y/N before each DEMO order
+python -m trading_desk run --execute --auto-approve --now   # 24/7 loop, every M15 close
+python -m trading_desk kill "reason"              # emergency stop (unkill to resume)
+python -m pytest -q                               # offline tests
+```
+
+Each cycle's full team discussion is saved to `workspace/cycles/…/transcript.md`, and every decision and trade goes to the hash-chained `state/journal.jsonl`. See [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the systems its ideas came from.
+
 ## Development Roadmap
 
-1. Create team instructions and agent roles.
-2. Establish communication and reporting protocols.
-3. Connect reliable market data.
-4. Build historical backtesting.
-5. Connect a demo exchange environment.
-6. Evaluate at least 100 demo trades.
+1. ✅ Create team instructions and agent roles.
+2. ✅ Establish communication and reporting protocols (shared workspace + journal).
+3. ✅ Connect reliable market data (OKX v5).
+4. ✅ Build historical backtesting.
+5. ✅ Connect a demo exchange environment (OKX Demo).
+6. ⏳ Evaluate at least 100 demo trades.
 7. Consider live trading only after a separate safety review.

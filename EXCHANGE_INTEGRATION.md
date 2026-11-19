@@ -3,9 +3,9 @@
 
 ## 1. Exchange Priority
 
-Primary candidate: BingX Demo Environment.
+Primary: OKX Demo Trading (implemented — `trading_desk/data/okx_client.py`, `trading_desk/execution/okx_executor.py`).
 
-Alternative candidate: OKX Demo Trading.
+Alternative candidate: BingX Demo Environment (not implemented).
 
 Bybit is explicitly excluded from this project.
 

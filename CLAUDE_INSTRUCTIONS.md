@@ -79,8 +79,8 @@ Initial settings:
 ## 8. Exchange Restrictions
 
 - Do not use Bybit.
-- BingX Demo is the primary integration candidate.
-- OKX Demo is the alternative.
+- OKX Demo is the primary integration (implemented).
+- BingX Demo is the alternative (not implemented).
 - Never enable real-money execution without explicit user approval.
 - Never expose API credentials.
 
