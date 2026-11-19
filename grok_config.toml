@@ -1,0 +1,110 @@
+# Grok Budget Controller — конфигурация
+# Все суммы в USD. Цены моделей сверяйте с консолью xAI (console.x.ai) — они меняются.
+
+[budget]
+weekly_budget_usd = 25.0      # сколько всего можно потратить на Grok за неделю
+reserve_percent   = 15        # резерв, который НЕ раздаётся ботам (для других настроек / экспериментов)
+plan_days         = 8         # бюджет растягивается на 8 дней: неделя + запас
+enforcement       = "hard"    # hard = блокировать бота при исчерпании лимита; soft = только предупреждать
+dedupe_window_minutes = 30    # повторный одинаковый запрос в этом окне берётся из кэша (0 = выключить)
+retention_days    = 28        # cleanup удаляет сырые записи старше этого срока
+
+[api]
+base_url    = "https://api.x.ai/v1"
+api_key_env = "XAI_API_KEY"   # ключ ТОЛЬКО через переменную окружения, никогда не в репозитории
+default_model = "grok-4"
+timeout_seconds = 120
+
+# Цена за 1 млн токенов (USD). ПРОВЕРЬТЕ актуальные цены в консоли xAI.
+[pricing."grok-4"]
+input  = 3.00
+output = 15.00
+
+[pricing."grok-3-mini"]
+input  = 0.30
+output = 0.50
+
+# Пороги анализа "бесполезной" работы
+[analysis]
+min_calls_for_verdict   = 10    # меньше вызовов — вердикт не выносится
+waste_reduce_percent    = 30    # потери выше → REDUCE
+waste_disable_percent   = 80    # потери выше и нет полезных ответов → DISABLE
+duplicate_cache_percent = 20    # повторов выше → включить/увеличить кэш
+long_prompt_tokens      = 8000  # средний prompt длиннее → сокращать контекст
+
+# Команды. priority: 1 (низкий) … 5 (критичный)
+[teams.control]
+label = "Управление и контроль"
+[teams.research]
+label = "Исследование рынка"
+[teams.strategy]
+label = "Стратегия и проверка"
+
+# Боты. min_share / max_share — % от распределяемого бюджета.
+# protected = true — бот никогда не отключается автоматически.
+[bots.head_trader]
+label = "Head Trader"
+team = "control"
+priority = 4
+min_share = 8
+max_share = 25
+max_output_tokens = 2000
+
+[bots.risk_manager]
+label = "Risk Manager"
+team = "control"
+priority = 5
+min_share = 10
+max_share = 25
+protected = true
+max_output_tokens = 1500
+
+[bots.trade_auditor]
+label = "Trade Auditor"
+team = "control"
+priority = 3
+min_share = 4
+max_share = 15
+max_output_tokens = 1500
+
+[bots.technical_analyst]
+label = "Technical Analyst"
+team = "research"
+priority = 3
+min_share = 6
+max_share = 20
+max_output_tokens = 2000
+
+[bots.quant_analyst]
+label = "Quant Analyst"
+team = "research"
+priority = 3
+min_share = 6
+max_share = 20
+max_output_tokens = 2000
+
+[bots.news_analyst]
+label = "News Analyst"
+team = "research"
+priority = 2
+min_share = 3
+max_share = 15
+max_output_tokens = 1200
+model = "grok-3-mini"
+
+[bots.strategy_researcher]
+label = "Strategy Researcher"
+team = "strategy"
+priority = 2
+min_share = 4
+max_share = 20
+max_output_tokens = 2500
+
+[bots.devils_advocate]
+label = "Devil's Advocate"
+team = "strategy"
+priority = 2
+min_share = 3
+max_share = 12
+max_output_tokens = 1000
+model = "grok-3-mini"

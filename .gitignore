@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# runtime state of grok_budget (usage log, kill switch, allocations, reports)
+grok_state/
+reports/
+.env

@@ -56,3 +56,7 @@ DEMO ONLY.
 5. Connect a demo exchange environment.
 6. Evaluate at least 100 demo trades.
 7. Consider live trading only after a separate safety review.
+
+## Grok Budget Controller
+
+Контроль расходов Grok: стоп-кран, недельный дашборд, анализ бесполезных расходов и автоматическое распределение бюджета между ботами. См. [GROK_BUDGET.md](GROK_BUDGET.md).
