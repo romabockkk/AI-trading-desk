@@ -1,52 +1,60 @@
 # Architecture
 
 ```
-            ┌──────────── owner (.env, config/risk_limits.toml, approvals) ────────────┐
-            │                                                                          │
- Data service ──► Validator ──► market_snapshots (SQLite)                               │
-                                   │                                                    │
-       ┌───────────────┬───────────┴───────┐                                            │
- Market Structure     Quant             Macro        (independent, strict JSON reports) │
-       └───────────────┴─────────┬─────────┘                                            │
-                               Chief ──► hypothesis + alternative                       │
-                                 │                                                      │
-                              Skeptic ⇄ agents   (≤ 2 rounds, rows in `debates`)        │
-                                 │                                                      │
-                           Risk Manager (VETO)                                          │
-                                 │                                                      │
-                     Deterministic Risk Gate  ◄── frozen RiskLimits ◄───────────────────┘
-                                 │ ALLOW / DENY   (no LLM input can change it)
-                         Chief records decision
-                                 │ ALLOW only
-                         Execution ──► PaperBroker | MT5Adapter (demo guard)
-                                 │
-                       Performance & Learning ──► trades, lessons, experiments, weekly_reviews
+ owner ── .env · config/risk_limits.toml · config/agents.toml · approvals (X-Owner-Token)
+   │
+ Data service (MOCK | future MT5) ─► Validator ─► market_snapshots
+   │
+   ├── Market Structure ─┐
+   ├── Quant ────────────┼─ independent strict-JSON reports (agent_reports)
+   └── Macro ────────────┘
+             │
+          Chief: hypothesis + alternative ─────────────┐
+             │                                         │ debates table:
+          Skeptic objections ⇄ agents answer w/ facts  │ HYPOTHESIS / ALTERNATIVE / OBJECTION /
+             │ (≤ 2 rounds)                            │ RESPONSE / DEMAND_NO_TRADE / CONCESSION
+          Risk Manager (independent sizing, VETO) ─────┘
+             │
+          Chief final (LLM review may only downgrade)
+             │
+          Deterministic Risk Gate (36 named checks, all evaluated) ─► ALLOW / DENY  (risk_events)
+             │ ALLOW only
+          Execution ─► PaperBroker (PAPER)  |  MT5Adapter (BROKER_DEMO, guarded, BLOCKED)
+             │
+          Performance & Learning ─► trades · lessons · experiments · weekly_reviews
 ```
 
 ## Modules (`src/tradedesk/`)
 
-| Module | Stage | Status |
+| Module | Purpose | Status |
 |---|---|---|
-| `config.py` — modes (no LIVE), settings, owner risk limits (frozen, hashed) | 2 | done |
-| `db/` — SQLite, forward-only checksummed migrations, append-only hash-chained `audit_log` | 2 | done |
-| `schemas/` — market, trading, agent report payloads (Pydantic, `extra=forbid`) | 2 | done |
-| `safety.py` — deterministic DEMO-proof guard for any broker order | 2 | done |
-| `broker/base.py` — `BrokerAdapter` interface; `broker/status.py` — honest BLOCKED reasons | 2 | interface only |
-| `api/app.py` — health, status, pause/resume/emergency stop, audit, errors | 2 | partial |
-| `data/` — mock feed, CSV import, validator | 3 | not started |
-| `agents/` — 8 agents, LLM adapter, orchestrator | 4 | not started |
-| `strategies/`, `backtest/` | 5 | not started |
-| `risk/gate.py` | 6 | not started |
-| `execution/paper.py` | 7 | not started |
-| `learning/` | 8 | not started |
-| dashboard | 9 | not started |
-| `broker/mt5_adapter.py` | 10 | blocked |
+| `config.py` | Modes (no LIVE), settings, frozen owner risk limits with sha256 | done, tested |
+| `db/` | SQLite, checksummed forward-only migrations, append-only hash-chained `audit_log` | done, tested |
+| `schemas/` | Pydantic models: market, trading, 8 agent payloads (`extra=forbid`) | done, tested |
+| `safety.py` | DEMO-proof guard for any broker order | done, tested |
+| `data/` | `MockFeed` (labelled MOCK), MT5 CSV importer (server TZ → UTC), validator, resampler, snapshot service | done, tested |
+| `analysis/` | Causal indicators; formal SMC rules MS.SWING/LABEL/TREND/BOS/CHOCH/OB/FVG/SWEEP v1 | done, tested |
+| `strategies/` | 6 strategies with formal rules; no-look-ahead contract | done, tested |
+| `backtest/` | Bar backtester with spread/commission/swap/slippage/latency, walk-forward OOS, bootstrap, Monte Carlo | done, tested |
+| `risk/` | Sizing from contract spec; deterministic Risk Gate | done, tested |
+| `execution/paper.py` | Local simulator: idempotent orders, SL/TP on M5 bars, reconcile, emergency close | done, tested |
+| `agents/` | Agent runtime (timeout, retry, schema validation), 8 agents, orchestrator, LLM adapter | done, tested (LLM via fakes only) |
+| `learning/` | Strategy registry (owner-only activate/rollback), experiment pipeline, error taxonomy, weekly review | done, tested |
+| `api/app.py`, `web/index.html` | FastAPI + responsive dashboard, optional scheduler | done, tested + browser-checked |
+| `broker/mt5_adapter.py` | MT5 demo adapter with guards | code + fake-module tests; **never connected** |
 
-## Invariants enforced in code (with tests)
+## Key invariants (each has tests)
 
-- `LIVE`/`REAL`/`PRODUCTION` mode → startup error; DB `CHECK` rejects `LIVE` in `decisions.mode`.
-- Risk limits: frozen model, hard ceilings, `require_stop_loss` must be true, file sha256 audited.
-- DB: LONG/SHORT decision requires entry + stop-loss; a trade decision without ALLOW needs a reason; orders need a decision; `client_order_id` unique (duplicate protection); `broker_account_is_demo` can only be 1 or NULL.
-- Audit log: UPDATE/DELETE blocked by triggers; chain verification detects tampering.
-- Broker order guard: mode BROKER_DEMO + enabled flag + owner phrase + integration tests + kill switch OFF + not paused + live account `trade_mode == DEMO` + exact server allowlist + server name contains "demo" + non-mock source. Any failure → blocked.
-- Secrets are `SecretStr`, excluded from `public_dict()` and `repr`.
+- No LIVE mode anywhere; `LIVE` in config or DB is rejected.
+- LLMs never produce prices, sizes or orders. An LLM review can only add objections or downgrade to NO_TRADE.
+- Any failed / timed-out / invalid critical agent (Chief, Market Structure, Macro, Risk Manager, Skeptic) ⇒ NO_TRADE.
+- Strategies only see closed candles; a signal at bar *i* fills at bar *i+1* open. Tested by recomputing signals on
+  truncated data, and by a null test on a driftless random walk.
+- Volume is computed only by the Risk Gate from the contract spec; RR is re-checked at the live price.
+- Only owner-approved (`ACTIVE_PAPER`) strategy versions can produce trades; without OOS evidence
+  (≥ 30 OOS trades, bootstrap CI95 > 0, ≥ half folds positive) the Skeptic raises unresolved HIGH objections ⇒ NO_TRADE,
+  unless the owner sets `paper_allow_unproven_strategies = true` (PAPER only).
+- Orders are idempotent on `client_order_id`; duplicates are blocked and logged.
+- After `max_consecutive_losses` losses, trading pauses until the owner acknowledges a review.
+- Improvements: proposal → walk-forward backtest → OOS → baseline comparison → owner approval → new version → owner activation.
+  Rollback re-activates the previous approved version. Single trades never change rules (recurrence ≥ 3 of last 20).

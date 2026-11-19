@@ -148,6 +148,7 @@ class PaperBroker:
         """Apply SL/TP to open positions using closed M5 bars after the last processed time."""
         closed = []
         sp_default = 25 * spec.point
+        slip = self.slippage_points * spec.point
         for p in [x for x in self.open_positions() if x["symbol"] == symbol]:
             since = datetime.fromisoformat(p["last_reconciled_utc"])
             last_t = since
@@ -157,10 +158,10 @@ class PaperBroker:
                 sp = (b.spread_points * spec.point) if b.spread_points is not None else sp_default
                 if p["side"] == "BUY":
                     hit_sl, hit_tp = b.low <= p["stop_loss"], p["take_profit"] is not None and b.high >= p["take_profit"]
-                    px_sl = min(b.open, p["stop_loss"]) if b.open_time_utc > since else p["stop_loss"]
+                    px_sl = (min(b.open, p["stop_loss"]) if b.open_time_utc > since else p["stop_loss"]) - slip
                 else:
                     hit_sl, hit_tp = b.high + sp >= p["stop_loss"], p["take_profit"] is not None and b.low + sp <= p["take_profit"]
-                    px_sl = max(b.open + sp, p["stop_loss"]) if b.open_time_utc > since else p["stop_loss"]
+                    px_sl = (max(b.open + sp, p["stop_loss"]) if b.open_time_utc > since else p["stop_loss"]) + slip
                 if hit_sl:   # conservative: stop first when both inside a bar
                     closed.append(self._close(p, px_sl, b.open_time_utc + M5, "STOP_LOSS", spec))
                     break

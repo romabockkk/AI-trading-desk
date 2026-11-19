@@ -127,7 +127,7 @@ class QuantAgent(BaseAgent):
                     continue
                 signals.append({"strategy_id": st.id, "version": a.version, "active": active, "action": sig.action,
                                 "entry": sig.ref_price, "sl": sig.stop_loss, "tp": sig.take_profit,
-                                "planned_rr": round(sig.planned_rr, 3), "reason": sig.reason, "invalidation": sig.invalidation,
+                                "planned_rr": round(sig.planned_rr, 3), "rr_target": sig.rr_target, "reason": sig.reason, "invalidation": sig.invalidation,
                                 "rule_ids": list(sig.rule_ids), "signal_bar_utc": sig.time_utc,
                                 "experiment_id": a.experiment_id, "oos_metrics_ref": a.evidence})
         summary = (f"regime={regime} (ER50={er:.2f})" if er is not None else "regime UNKNOWN") + \
@@ -260,9 +260,13 @@ class SkepticAgent(BaseAgent):
         objs: list[dict] = []
         n = 0
 
+        relax = ctx.settings.mode is Mode.PAPER and ctx.limits.limits.paper_allow_unproven_strategies
+
         def add(cat, text, sev):
             nonlocal n
             n += 1
+            if relax and cat in ("STATISTICS", "OVERFITTING") and sev == "HIGH":
+                sev, text = "MEDIUM", text + " [downgraded: owner policy paper_allow_unproven_strategies]"
             objs.append({"id": f"OBJ-{n}", "category": cat, "text": text, "severity": sev})
 
         s = ctx.snapshot
@@ -312,9 +316,6 @@ class SkepticAgent(BaseAgent):
         return AgentOutput({"objections": objs, "demand_no_trade": demand,
                             "summary": f"{len(objs)} objections; demand NO_TRADE={demand}"})
 
-    def llm_objections(self) -> None:
-        pass
-
 
 # ---------------------------------------------------------------- risk manager
 class RiskManagerAgent(BaseAgent):
@@ -336,6 +337,7 @@ class RiskManagerAgent(BaseAgent):
             return AgentOutput({"verdict": "VETO", "volume_lots": None, "risk_money": None, "risk_pct": None, "reasons": reasons})
         q, spec, eq = s.quote, s.spec, ctx.account.equity
         entry = q.ask if sig["action"] == "LONG" else q.bid
+        tp = live_target(sig, entry)
         lots, rm = sizing.size_position(spec, eq, L.max_risk_per_trade_pct, entry, sig["sl"], q.ask - q.bid)
         pct = rm / eq * 100 if eq else None
         if lots <= 0:
@@ -349,7 +351,7 @@ class RiskManagerAgent(BaseAgent):
             reasons.append("daily drawdown limit reached")
         if len(ctx.open_positions) >= L.max_concurrent_positions:
             reasons.append("max concurrent positions reached")
-        rr = abs(sig["tp"] - entry) / stop_dist if stop_dist > 0 else 0
+        rr = abs(tp - entry) / stop_dist if stop_dist > 0 else 0
         if rr < L.min_reward_risk:
             reasons.append(f"RR at live price {rr:.2f} < {L.min_reward_risk}")
         verdict = "VETO" if reasons else "APPROVE"
@@ -390,6 +392,15 @@ class PerformanceAgent(BaseAgent):
 
 AGENT_CLASSES = {c.name: c for c in (ChiefAgent, MarketStructureAgent, QuantAgent, MacroAgent, RiskManagerAgent,
                                        SkepticAgent, ExecutionAgent, PerformanceAgent)}
+
+
+def live_target(sig: dict, entry: float) -> float:
+    """TP re-anchored to the live entry for R-multiple targets (same rule as the backtester)."""
+    rr = sig.get("rr_target")
+    if not rr:
+        return sig["tp"]
+    r = abs(entry - sig["sl"]) * rr
+    return entry + r if sig["action"] == "LONG" else entry - r
 
 
 def now_utc() -> datetime:

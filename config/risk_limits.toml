@@ -20,3 +20,4 @@ max_candle_age_seconds_m5 = 900
 news_unknown_policy = "ALLOW_PAPER_ONLY"   # DENY | ALLOW_PAPER_ONLY  (BROKER_DEMO always denies on UNKNOWN)
 news_blackout_minutes = 30          # no new trades +/- N minutes around HIGH-impact events
 max_entry_deviation_atr = 0.5       # proposal entry must be within N*ATR of the live quote
+paper_allow_unproven_strategies = false   # PAPER only: allow strategies without OOS edge to collect paper evidence

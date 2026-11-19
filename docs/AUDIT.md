@@ -32,28 +32,57 @@ Notes
 
 Consequence: no real market data and no broker connection are possible from this container right now. Stage 3 will use a clearly labelled MOCK data source and a CSV importer for owner-supplied historical data.
 
-## 3. Bybit CFD / MT5 findings
+## 3. Bybit CFD / MT5 findings (re-checked 2026-11-19, second pass)
 
-Bybit pages could not be fetched directly (DNS blocked). Findings come from web-search summaries of Bybit's own pages, so treat them as **UNVERIFIED until re-read on a machine with access**:
+`www.bybit.com`, `learn.bybit.com`, `bybit-global.com`, `mql5.com` and Bybit's API docs are **blocked from this container**
+(DNS refused by the network policy). Bybit pages could therefore only be read through web-search summaries of
+those pages. PyPI was reachable and was read directly.
 
-1. Bybit renamed the product "TradFi" to **"CFD"** (MT5 CFD Account), reportedly in July 2026.
-2. **CFD Demo Trading**: Bybit Global only, subject to regional availability, requires KYC level 1+, credited with 10,000 virtual USDx.
-3. **Critical:** the Bybit help page *How to get started with Bybit CFD Demo Trading* reportedly says Copy Trading, **MT5 Client, API and Expert Advisors (EA) access are not supported** for CFD Demo at launch. If true, no automated BROKER_DEMO order path exists today.
-4. Older Bybit MT5 demo guides mention server `Bybit-Demo` and gold as `XAUUSD+`; a third-party library uses `XAUUSD.s`. Exact symbol and server must be read from the MT5 terminal; nothing is hard-coded except the owner-editable allowlist.
-5. The MetaTrader5 Python package requires Windows and a running MT5 terminal.
-6. Region availability for the owner: **UNKNOWN** (secondary sources say EEA/UK/US/Canada are restricted). Owner must check on the Bybit sign-up screen.
-7. Bybit V5 crypto API is not a substitute and is not used.
+### Verification levels
+- **CONFIRMED (primary source read directly)**: checked against the original, machine-readable source.
+- **REPORTED BY BYBIT PAGES (via search summary)**: Bybit's own help/learn pages as quoted by a search engine;
+  the page itself could not be opened here. Must be re-read before Stage 10.
+- **THIRD-PARTY**: non-Bybit sources.
+- **UNKNOWN**: no reliable information found.
 
-**Verdict: BROKER_DEMO = BLOCKED.** Reasons are reported live by `GET /api/status` → `broker_demo.reasons`.
+| # | Fact | Level |
+|---|---|---|
+| 1 | Python package `MetaTrader5` latest version 5.0.6231 (uploaded 2026-09-27), wheels **win_amd64 only**; official docs at mql5.com | **CONFIRMED** (PyPI JSON API) |
+| 2 | `pip download metatrader5` fails on this Linux host | **CONFIRMED** (executed) |
+| 3 | Product formerly "Bybit TradFi" is now **"CFD"** (MT5 CFD Account), renamed July 2026 | REPORTED BY BYBIT PAGES |
+| 4 | CFD Demo Trading: Bybit Global only, subject to regional availability, KYC level 1+, 10,000 virtual USDx | REPORTED BY BYBIT PAGES |
+| 5 | **CFD Demo: "Copy Trading, MT5 Client, API and Expert Advisors (EA) access" not supported at launch** | REPORTED BY BYBIT PAGES ("How to get started with Bybit CFD Demo Trading") |
+| 6 | Live CFD accounts: MT5 desktop client available "for Expert Advisors, advanced charting and algorithmic strategies" | REPORTED BY BYBIT PAGES (CFD trading guide) |
+| 7 | Bybit's REST/V5 API automates TradFi **Perpetuals**, not CFD; no CFD-specific API documentation found | REPORTED BY BYBIT PAGES (CFD vs Perps comparison) + absence of evidence |
+| 8 | Older MT5 demo setup: server **Bybit-Demo** (live: Bybit-Live); demo server time **UTC+2, UTC+3 in DST**, not changeable | REPORTED BY BYBIT PAGES (MT5 FAQ / MT5 demo guide; publication date unknown) |
+| 9 | Gold symbol shown as `XAUUSD+` on Bybit pages; a third-party library uses `XAUUSD.s` | REPORTED BY BYBIT PAGES / THIRD-PARTY — must be read from Market Watch |
+| 10 | A third-party article claims the demo includes EAs | THIRD-PARTY, contradicts #5, not CFD-specific |
+| 11 | Whether the older "Bybit-Demo" MT5 login still works for the new CFD demo | **UNKNOWN** (#5 vs #8 conflict) |
+| 12 | Availability of CFD demo in the owner's region | **UNKNOWN** (secondary sources list EEA/UK/US/Canada restrictions) |
+| 13 | Real contract specs (tick value, contract size, swaps, commission, stops level, trading hours) for Bybit CFD XAUUSD | **UNKNOWN** — only obtainable from the MT5 terminal; the project uses clearly labelled MOCK specs |
+| 14 | Which DST rule the Bybit server uses (EU vs US) | **UNKNOWN** — CSV importer requires the zone to be given explicitly |
 
-Sources: [Bybit CFD Demo Trading](https://www.bybit.com/en/learn/bybit-tradfi/bybit-cfd-demo-trading), [What is Bybit CFD](https://www.bybit.com/en/learn/bybit-tradfi/what-is-bybit-cfd), [Bybit MT5 demo trading](https://www.bybit.com/en/learn/tradfi/mt5-demo-trading), [NexusTrader Bybit TradFi docs](https://nexustrader.readthedocs.io/en/latest/exchange/bybit_tradfi.html).
+**Verdict: BROKER_DEMO = BLOCKED.** Two independent reasons: (a) this host is Linux and the official MT5 Python
+package is Windows-only (confirmed); (b) Bybit reportedly does not provide MT5/API/EA access on the CFD demo (reported, unverified).
+Bybit Crypto Futures / TradFi Perpetuals / V5 API are **not** used as a substitute.
+
+Sources: [Bybit CFD Demo Trading](https://www.bybit.com/en/learn/bybit-tradfi/bybit-cfd-demo-trading),
+[Bybit CFD trading guide](https://www.bybit.com/en/learn/bybit-tradfi/bybit-cfd-trading-guide),
+[CFD vs TradFi Perpetuals](https://www.bybit.com/en/learn/derivatives/tradfi-cfds-vs-tradfi-perpetual-contracts),
+[Bybit MT5 demo trading](https://www.bybit.com/en/learn/tradfi/mt5-demo-trading),
+[Bybit MT5 FAQ](https://bybit.nl/en/help-center/article/FAQ-MetaTrader-5-MT5),
+[Bybit EA introduction](https://www.bybit.com/en/help-center/article/Introduction-to-Expert-Advisors-EAs),
+[PyPI MetaTrader5](https://pypi.org/project/MetaTrader5/),
+[NexusTrader Bybit TradFi](https://nexustrader.readthedocs.io/en/latest/exchange/bybit_tradfi.html),
+[CoinGabbar](https://www.coingabbar.com/en/bybit-cfd-demo-trading-virtual-funds).
 
 ## 4. Paths to a real BROKER_DEMO later (owner decision)
 
-- A. Windows host (or VM) with MT5 terminal logged into a Bybit CFD **demo** — only works if Bybit enables MT5 client/API for demo.
-- B. If Bybit demo stays app/web-only: BROKER_DEMO remains blocked; PAPER mode with broker-matched specs is the only automated option.
-- C. Another regulated broker's MT5 demo would need a separate owner decision. Not planned.
+- A. Windows host/VM + MT5 terminal logged into a Bybit **demo** — only if Bybit enables MT5 access for the CFD demo
+  (check #5/#11 on a machine that can open bybit.com). `broker/mt5_adapter.py` is ready for this.
+- B. If the Bybit CFD demo stays web/app-only: BROKER_DEMO stays blocked; PAPER mode remains the automated option.
+- C. Another broker's MT5 demo: same adapter would work, but this needs a separate owner decision. Not planned.
 
 ## 5. Inventory after Stage 1–2 (what really exists)
 
-See README "Status". Agents, data feeds, strategies, risk gate, paper execution and dashboard **do not exist yet**.
+See README "Status".

@@ -165,7 +165,7 @@ def run_backtest(strategy: Strategy, m5: list[Candle], spec: SymbolSpec, cfg: Ba
         slip = c.slippage_points * pt
         long = sig.action == "LONG"
         entry = eb.open + spread + slip if long else eb.open - slip
-        stop, target = sig.stop_loss, sig.take_profit
+        stop, target = sig.stop_loss, sig.target_for_entry(entry)
         if (long and not stop < entry < target) or (not long and not target < entry < stop):
             skipped += 1
             i += 1

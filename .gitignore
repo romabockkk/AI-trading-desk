@@ -9,3 +9,5 @@ __pycache__/
 data/*.db
 data/*.db-*
 *.log
+data/calendar.csv
+build/

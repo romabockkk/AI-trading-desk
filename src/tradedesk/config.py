@@ -61,6 +61,9 @@ class RiskLimits(BaseModel):
     news_unknown_policy: Literal["DENY", "ALLOW_PAPER_ONLY"] = "ALLOW_PAPER_ONLY"
     news_blackout_minutes: int = Field(default=30, ge=0, le=240)
     max_entry_deviation_atr: float = Field(default=0.5, gt=0, le=3.0)
+    # PAPER only: let strategies without demonstrated OOS edge trade, to collect paper evidence.
+    # Statistical objections are still recorded (as MEDIUM). Never applies to BROKER_DEMO.
+    paper_allow_unproven_strategies: bool = False
 
     @field_validator("require_stop_loss")
     @classmethod
@@ -116,6 +119,12 @@ class Settings(BaseSettings):
     tradedesk_llm_model: str = ""
     llm_api_key: SecretStr = SecretStr("")
 
+    tradedesk_data_source: str = "MOCK"
+    tradedesk_symbol: str = "XAUUSD"
+    tradedesk_scheduler_minutes: int = 0          # 0 = no automatic cycles
+    tradedesk_paper_initial_balance: float = 10_000.0
+    tradedesk_owner_token: SecretStr = SecretStr("")   # if set, owner actions require X-Owner-Token header
+
     tradedesk_api_host: str = "127.0.0.1"
     tradedesk_api_port: int = 8000
 
@@ -159,6 +168,10 @@ class Settings(BaseSettings):
             "llm_provider": self.tradedesk_llm_provider,
             "llm_model": self.tradedesk_llm_model or None,
             "llm_key_configured": bool(self.llm_api_key.get_secret_value()),
+            "data_source": self.tradedesk_data_source,
+            "symbol": self.tradedesk_symbol,
+            "scheduler_minutes": self.tradedesk_scheduler_minutes,
+            "owner_token_required": bool(self.tradedesk_owner_token.get_secret_value()),
         }
 
 

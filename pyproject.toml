@@ -17,15 +17,16 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27"]
 # MetaTrader5 ships Windows-only wheels. Install it only on a Windows host with the MT5 terminal.
+llm = ["anthropic>=1.0"]
 mt5 = ["MetaTrader5>=5.0.45; platform_system == 'Windows'"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-tradedesk = ["db/migrations/*.sql"]
+tradedesk = ["db/migrations/*.sql", "agents/prompts/*.md", "web/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 addopts = "-q"

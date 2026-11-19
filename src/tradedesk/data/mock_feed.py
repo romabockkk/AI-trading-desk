@@ -104,6 +104,7 @@ class MockFeed:
             return None
         last = self._bars[-1]
         half = (last.spread_points or self.spread) * self.point / 2
-        return Quote(symbol=self.symbol, time_utc=last.open_time_utc + M5,
+        # synthetic tick stamped "now"; priced at the last closed bar's close (mock has no intrabar ticks)
+        return Quote(symbol=self.symbol, time_utc=now_utc,
                      bid=round(last.close - half, self.digits), ask=round(last.close + half, self.digits),
                      source=MOCK_SOURCE)

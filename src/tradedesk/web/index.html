@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Desk</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1b1f24;--muted:#5d6670;--line:#dde1e6;--up:#0f7b4f;--down:#b3261e;--warn:#9a6700;--accent:#2f5fd0;--paper:#2f5fd0;--demo:#b3261e;--chip:#eef1f5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1216;--panel:#171b21;--ink:#e6e9ee;--muted:#9aa4af;--line:#2a313a;--up:#3ccf8e;--down:#ff6b5e;--warn:#e3b341;--accent:#7aa2ff;--paper:#7aa2ff;--demo:#ff6b5e;--chip:#222831}}
+:root[data-theme="dark"]{--bg:#0f1216;--panel:#171b21;--ink:#e6e9ee;--muted:#9aa4af;--line:#2a313a;--up:#3ccf8e;--down:#ff6b5e;--warn:#e3b341;--accent:#7aa2ff;--paper:#7aa2ff;--demo:#ff6b5e;--chip:#222831}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.mode{font-weight:800;letter-spacing:.06em;padding:6px 12px;border-radius:6px;color:#fff;font-size:15px}
+.mode.PAPER{background:var(--paper)}.mode.BROKER_DEMO{background:var(--demo)}.mode.OTHER{background:var(--muted)}
+.chip{background:var(--chip);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted);white-space:nowrap}
+.chip.bad{color:var(--down)}.chip.ok{color:var(--up)}.chip.warn{color:var(--warn)}
+.btns{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:6px 12px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{background:var(--down);border-color:var(--down);color:#fff}
+button:disabled{opacity:.5;cursor:not-allowed}
+main{padding:16px;display:grid;gap:16px;grid-template-columns:repeat(12,1fr);max-width:1500px;margin:0 auto}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0;grid-column:span 12}
+@media(min-width:900px){.s4{grid-column:span 4}.s6{grid-column:span 6}.s8{grid-column:span 8}}
+h2{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.kpi .v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}.kpi .l{font-size:12px;color:var(--muted)}
+.agents{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.agent{border:1px solid var(--line);border-radius:8px;padding:10px}.agent b{display:block;font-size:13px}
+.agent .st{font-size:12px;font-weight:600}.st.OK{color:var(--up)}.st.FAILED,.st.TIMEOUT,.st.INVALID_OUTPUT{color:var(--down)}.st.NO_RUN_YET{color:var(--muted)}
+.agent p{margin:6px 0 0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.tbl{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}
+.up{color:var(--up)}.down{color:var(--down)}.muted{color:var(--muted)}
+canvas{width:100%;height:300px;display:block}
+.banner{grid-column:span 12;border-radius:10px;padding:10px 14px;border:1px solid var(--warn);color:var(--warn);background:var(--panel)}
+pre{white-space:pre-wrap;font-size:12px;margin:0;color:var(--ink)}
+.msg{border-left:3px solid var(--line);padding:4px 8px;margin:6px 0;font-size:12.5px}
+.msg.OBJECTION{border-color:var(--warn)}.msg.RESPONSE{border-color:var(--accent)}.msg.DEMAND_NO_TRADE{border-color:var(--down)}.msg.HYPOTHESIS{border-color:var(--up)}
+@media(max-width:700px){header{position:static}}
+#toast{position:fixed;bottom:16px;left:16px;right:16px;max-width:560px;margin:auto;background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:8px;display:none;z-index:9;font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}input,select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <span id="mode" class="mode OTHER">…</span>
+  <span id="conn" class="chip">connecting…</span>
+  <span id="broker" class="chip">broker: …</span>
+  <span id="data" class="chip">data: …</span>
+  <span id="ks" class="chip">kill switch: …</span>
+  <div class="btns">
+    <button class="primary" id="b-start">Start Analysis</button>
+    <button id="b-pause">Pause</button>
+    <button id="b-resume">Resume</button>
+    <button id="b-review">Review</button>
+    <button class="danger" id="b-stop">Emergency Stop</button>
+  </div>
+</header>
+<main>
+  <div class="banner" id="banner">Loading…</div>
+
+  <section class="s8"><h2 id="chart-title">Chart</h2>
+    <div class="row" style="margin-bottom:8px"><select id="tf"><option>M15</option><option selected>H1</option><option>H4</option></select>
+    <span class="muted" id="quote"></span></div>
+    <canvas id="chart"></canvas></section>
+
+  <section class="s4"><h2>Account (local paper simulator)</h2><div class="kpis" id="acct"></div></section>
+
+  <section><h2>Chief &amp; agents</h2><div class="agents" id="agents"></div></section>
+
+  <section class="s6"><h2>Latest discussion</h2><div id="debate" class="muted">No cycle yet.</div></section>
+  <section class="s6"><h2>Decisions &amp; signals</h2><div class="tbl" id="decisions"></div></section>
+
+  <section class="s6"><h2>Open positions</h2><div class="tbl" id="positions"></div></section>
+  <section class="s6"><h2>Statistics (paper trades)</h2><div class="kpis" id="stats"></div></section>
+
+  <section><h2>Strategies</h2><div class="tbl" id="strategies"></div>
+    <div class="row" style="margin-top:10px"><span class="muted">Owner token (only if configured):</span><input id="tok" type="password" placeholder="X-Owner-Token" autocomplete="off"></div></section>
+
+  <section class="s6"><h2>Trades</h2><div class="tbl" id="trades"></div></section>
+  <section class="s6"><h2>Experiments</h2><div class="tbl" id="experiments"></div></section>
+
+  <section class="s6"><h2>Error log</h2><div class="tbl" id="errors"></div></section>
+  <section class="s6"><h2>Risk events &amp; lessons</h2><div class="tbl" id="risk"></div></section>
+
+  <section class="s6"><h2>CFD instruments</h2><div class="tbl" id="instruments"></div></section>
+  <section class="s6"><h2>Weekly reviews</h2><div id="weekly" class="muted">None yet.</div></section>
+</main>
+<div id="toast"></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num=(v,d=2)=>v==null||v===""?"—":(typeof v==="number"?v.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d}):esc(v));
+const cls=v=>v>0?"up":v<0?"down":"";
+function toast(t){const e=$("toast");e.textContent=t;e.style.display="block";clearTimeout(e._t);e._t=setTimeout(()=>e.style.display="none",6000)}
+function tok(){try{return localStorage.getItem("ownerTok")||""}catch(e){return ""}}
+$("tok").value=tok();$("tok").addEventListener("change",e=>{try{localStorage.setItem("ownerTok",e.target.value)}catch(_){}});
+async function api(path,opt={}){const h={"Content-Type":"application/json"};if($("tok").value)h["X-Owner-Token"]=$("tok").value;
+  const r=await fetch(path,{...opt,headers:h});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b.detail?JSON.stringify(b.detail):r.status);return b}
+function table(rows,cols){if(!rows||!rows.length)return '<p class="muted">None.</p>';
+  return "<table><thead><tr>"+cols.map(c=>`<th>${esc(c[0])}</th>`).join("")+"</tr></thead><tbody>"+
+  rows.map(r=>"<tr>"+cols.map(c=>`<td>${c[1](r)}</td>`).join("")+"</tr>").join("")+"</tbody></table>"}
+const t=s=>s?esc(String(s).replace("T"," ").slice(0,19)):"—";
+
+let D=null;
+async function load(){
+  try{D=await api("/api/dashboard");$("conn").textContent="backend connected";$("conn").className="chip ok"}
+  catch(e){$("conn").textContent="backend unreachable";$("conn").className="chip bad";return}
+  const m=$("mode");m.textContent=D.mode==="PAPER"?"PAPER (local simulator)":D.mode==="BROKER_DEMO"?"BROKER DEMO":D.mode;
+  m.className="mode "+(["PAPER","BROKER_DEMO"].includes(D.mode)?D.mode:"OTHER");
+  $("broker").textContent="broker demo: "+D.broker_demo.status+(D.broker_demo.connected?" · connected":" · not connected");
+  $("broker").className="chip "+(D.broker_demo.status==="BLOCKED"?"bad":"ok");
+  $("data").textContent="data: "+D.data_source.name+(D.data_source.is_mock?" (synthetic)":"");$("data").className="chip "+(D.data_source.is_mock?"warn":"ok");
+  $("ks").textContent="kill switch "+D.kill_switch+(D.paused?" · paused":"");$("ks").className="chip "+(D.kill_switch==="ON"||D.paused?"bad":"ok");
+  $("banner").innerHTML=`<b>No real money. LIVE trading does not exist in this system.</b> Market data is <b>${D.data_source.is_mock?"MOCK (synthetic)":esc(D.data_source.name)}</b>. Broker demo is <b>${esc(D.broker_demo.status)}</b>: ${esc(D.broker_demo.reasons.slice(0,2).join("; "))}. Market ${D.market_open?"open":"closed"} · server ${t(D.server_time_utc)} UTC · audit chain ${D.audit_chain_ok?"intact":"BROKEN"}.`;
+  const a=D.account,s=D.stats,dd=D.initial_balance?((D.initial_balance-a.equity)/D.initial_balance*100):null;
+  $("acct").innerHTML=[["Balance",num(a.balance)],["Equity",num(a.equity)],["Unrealized PnL",`<span class="${cls(D.unrealized_pnl)}">${num(D.unrealized_pnl)}</span>`],
+    ["Total net PnL",`<span class="${cls(s.net_pnl)}">${num(s.net_pnl)}</span>`],["Drawdown vs start",dd==null?"—":num(Math.max(0,dd))+"%"],["Margin used",num(a.margin)]]
+    .map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("")+`<p class="muted" style="grid-column:1/-1;margin:0">Account ${esc(a.login)} on ${esc(a.server)} — not a broker account.</p>`;
+  $("agents").innerHTML=Object.entries(D.agents).map(([n,x])=>`<div class="agent"><b>${esc(n.replace("_"," "))}${x.critical?' <span class="muted">· critical</span>':""}</b>
+    <span class="st ${esc(x.status)}">${esc(x.status)}</span> <span class="muted">${t(x.created_utc)}${x.latency_ms!=null?" · "+x.latency_ms+" ms":""}</span>
+    <p>${esc(x.error||x.summary||"")}</p>${x.llm_review?`<p>LLM: ${esc(x.llm_review.assessment||x.llm_review.error)}</p>`:""}</div>`).join("");
+  $("debate").innerHTML=D.debate.length?D.debate.map(m=>{const p=m.payload||{};const txt=p.text||p.hypothesis||(p.facts||[]).join("; ")||(p.objection_ids?"objections "+p.objection_ids.join(", "):"");
+    return `<div class="msg ${esc(m.message_type)}"><b>R${m.round} ${esc(m.from_agent)} → ${esc(m.to_agent||"ALL")}</b> · ${esc(m.message_type)}${p.severity?" · "+esc(p.severity):""}${p.resolved===true?' · <span class="up">resolved</span>':p.resolved===false?' · <span class="down">unresolved</span>':""}<br>${esc(txt)}</div>`}).join(""):'<p class="muted">No cycle yet. Press Start Analysis.</p>';
+  $("decisions").innerHTML=table(D.decisions,[["Time",r=>t(r.created_utc)],["Action",r=>`<b class="${r.action==="LONG"?"up":r.action==="SHORT"?"down":""}">${esc(r.action)}</b>`],
+    ["Strategy",r=>esc(r.strategy_id||"—")],["Gate",r=>esc(r.risk_gate_result)],["Entry / SL / TP",r=>r.entry?`${num(r.entry)} / ${num(r.stop_loss)} / ${num(r.take_profit)}`:"—"],
+    ["Why",r=>`<span class="muted">${esc((r.no_trade_reason||(r.reasons||[]).join("; ")).slice(0,180))}</span>`]]);
+  $("positions").innerHTML=table(D.positions,[["Symbol",r=>esc(r.symbol)],["Side",r=>esc(r.side)],["Lots",r=>num(r.volume_lots)],["Open",r=>num(r.open_price)],["SL",r=>num(r.stop_loss)],["TP",r=>num(r.take_profit)],["Venue",r=>esc(r.venue)],["Opened",r=>t(r.opened_utc)]]);
+  $("stats").innerHTML=[["Trades",s.n_trades],["Win rate",s.win_rate==null?"—":num(s.win_rate*100,1)+"%"],["Expectancy",s.expectancy_r==null?"—":num(s.expectancy_r,3)+" R"],
+    ["Profit factor",s.profit_factor==null?"—":num(s.profit_factor,2)],["Max drawdown",num(s.max_drawdown_pct)+"%"],["Max losing streak",s.max_consecutive_losses]]
+    .map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("")+(s.sample_warning?`<p class="muted" style="grid-column:1/-1;margin:0">⚠ ${esc(s.sample_warning)}</p>`:"");
+  $("strategies").innerHTML=table(D.strategies,[["Strategy",r=>esc(r.strategy_id)],["Version",r=>esc(r.version)],["Status",r=>`<b>${esc(r.status)}</b>`],["Approved by",r=>esc(r.approved_by||"—")],
+    ["Actions",r=>`<button data-ev="${esc(r.strategy_id)}|${esc(r.version)}">OOS test</button> `+(r.status==="ACTIVE_PAPER"?`<button data-de="${esc(r.strategy_id)}">Deactivate</button>`:`<button data-ac="${esc(r.strategy_id)}|${esc(r.version)}">Activate (owner)</button>`)]]);
+  $("trades").innerHTML=table(D.trades,[["Closed",r=>t(r.closed_utc)],["Side",r=>esc(r.side)],["Strategy",r=>esc(r.strategy_id)],["Net",r=>`<span class="${cls(r.net_pnl)}">${num(r.net_pnl)}</span>`],["R",r=>num(r.r_multiple,2)],["Exit",r=>esc(r.exit_reason)],["Tags",r=>esc((r.error_tags||[]).join(", "))]]);
+  $("experiments").innerHTML=table(D.experiments,[["Time",r=>t(r.created_utc)],["Strategy",r=>esc(r.strategy_id)],["Stage",r=>esc(r.stage)],["Conclusion",r=>`<span class="muted">${esc(r.conclusion)}</span>`]]);
+  $("errors").innerHTML=table(D.errors,[["Time",r=>t(r.created_utc)],["Component",r=>esc(r.component)],["Severity",r=>esc(r.severity)],["Message",r=>esc(r.message)]]);
+  $("risk").innerHTML=table([...D.risk_events.map(r=>({k:"risk",time:r.created_utc,a:r.event_type,b:JSON.stringify(r.details).slice(0,140)})),...D.lessons.map(r=>({k:"lesson",time:r.created_utc,a:r.error_category,b:r.description}))].sort((x,y)=>y.time.localeCompare(x.time)).slice(0,30),
+    [["Time",r=>t(r.time)],["Kind",r=>esc(r.k)],["Type",r=>esc(r.a)],["Detail",r=>`<span class="muted">${esc(r.b)}</span>`]]);
+  $("instruments").innerHTML=table(D.instruments,[["Symbol",r=>`<b>${esc(r.symbol)}</b>`],["Class",r=>esc(r.asset_class)],["Spec source",r=>`<span class="muted">${esc(r.spec_source)}</span>`]]);
+  $("weekly").innerHTML=D.weekly_reviews.length?D.weekly_reviews.map(w=>`<pre>${esc(w.report)}</pre>`).join("<hr>"):'<p class="muted">None yet. Press Review.</p>';
+  $("quote").textContent=D.quote?`${D.symbol} bid ${D.quote.bid} / ask ${D.quote.ask} (MOCK)`:`${D.symbol}: no quote (market closed)`;
+  $("chart-title").textContent=`${D.symbol} chart — synthetic MOCK data, not real prices`;
+  drawChart();
+}
+async function drawChart(){
+  let c;try{c=await api(`/api/candles?symbol=${D?D.symbol:"XAUUSD"}&tf=${$("tf").value}&n=120`)}catch(e){return}
+  const cv=$("chart"),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;
+  const g=cv.getContext("2d");g.scale(dpr,dpr);g.clearRect(0,0,W,H);const cs=getComputedStyle(document.documentElement);
+  const k=c.candles;if(!k.length)return;const hi=Math.max(...k.map(x=>x.h)),lo=Math.min(...k.map(x=>x.l)),pad=56;
+  const y=v=>8+(hi-v)/(hi-lo||1)*(H-28),w=(W-pad)/k.length;
+  g.strokeStyle=cs.getPropertyValue("--line");g.fillStyle=cs.getPropertyValue("--muted");g.font="11px system-ui";
+  for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;g.beginPath();g.moveTo(0,y(v));g.lineTo(W-pad,y(v));g.stroke();g.fillText(v.toFixed(2),W-pad+4,y(v)+4)}
+  k.forEach((x,i)=>{const up=x.c>=x.o;g.strokeStyle=g.fillStyle=cs.getPropertyValue(up?"--up":"--down");const cx=i*w+w/2;
+    g.beginPath();g.moveTo(cx,y(x.h));g.lineTo(cx,y(x.l));g.stroke();const top=y(Math.max(x.o,x.c)),bh=Math.max(1,Math.abs(y(x.o)-y(x.c)));g.fillRect(cx-Math.max(1,w*.35),top,Math.max(2,w*.7),bh)});
+  g.fillStyle=cs.getPropertyValue("--muted");g.fillText(t(k[0].t)+" → "+t(k[k.length-1].t)+" UTC",4,H-4);
+}
+async function act(btn,fn){btn.disabled=true;try{const r=await fn();toast(r)}catch(e){toast("Error: "+e.message)}finally{btn.disabled=false;load()}}
+$("b-start").onclick=e=>act(e.target,async()=>{const r=await api("/api/actions/start-analysis",{method:"POST"});return `Decision ${r.action} (gate ${r.risk_gate})${r.no_trade_reason?": "+r.no_trade_reason:""}`});
+$("b-pause").onclick=e=>act(e.target,async()=>{await api("/api/actions/pause",{method:"POST",body:JSON.stringify({reason:"dashboard"})});return "Paused"});
+$("b-resume").onclick=e=>act(e.target,async()=>{await api("/api/actions/resume",{method:"POST",body:JSON.stringify({reason:"dashboard"})});return "Resumed"});
+$("b-review").onclick=e=>act(e.target,async()=>{const r=await api("/api/actions/review",{method:"POST"});return `Review stored: ${r.weekly.metrics.n_trades} trades this week, ${r.new_lessons.length} new lessons`});
+$("b-stop").onclick=e=>{if(!confirm("Emergency stop: activate kill switch, pause, and close all paper positions?"))return;
+  act(e.target,async()=>{const r=await api("/api/actions/emergency-stop",{method:"POST",body:JSON.stringify({reason:"dashboard emergency stop"})});return `Kill switch ON, closed ${r.closed_positions.length} positions`})};
+document.addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return;
+  if(b.dataset.ac){const[s,v]=b.dataset.ac.split("|");const reason=prompt(`Reason for activating ${s} v${v} in PAPER:`);if(!reason)return;
+    act(b,async()=>{await api(`/api/strategies/${s}/activate`,{method:"POST",body:JSON.stringify({version:v,reason})});return `${s} active in PAPER`})}
+  if(b.dataset.de){const s=b.dataset.de;act(b,async()=>{await api(`/api/strategies/${s}/deactivate`,{method:"POST",body:JSON.stringify({reason:"dashboard"})});return `${s} deactivated`})}
+  if(b.dataset.ev){const[s,v]=b.dataset.ev.split("|");act(b,async()=>{const r=await api("/api/research/evidence",{method:"POST",body:JSON.stringify({strategy_id:s,version:v})});return r.conclusion})}});
+$("tf").onchange=drawChart;window.addEventListener("resize",()=>D&&drawChart());
+load();setInterval(load,30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+event,scheduled_utc,impact,currency,source_name,source_url,published_utc
+EXAMPLE ROW - NOT A REAL EVENT - copy to data/calendar.csv and fill from an official calendar,2099-01-01T13:30:00+00:00,HIGH,USD,source name here,https://example.org,2099-01-01T00:00:00+00:00

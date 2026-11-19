@@ -1,14 +1,14 @@
 # Roadmap
 
-| # | Stage | Exit criterion (must be tested) | Status |
+| # | Stage | State (2026-11-19) | What is still missing |
 |---|---|---|---|
-| 1 | Audit | Inventory, environment, Bybit CFD findings documented | done |
-| 2 | Foundation | Config, DB + migrations, schemas, safety guard, tests green | done |
-| 3 | Data | MockFeed (labelled MOCK), CSV importer, validator (gaps, timezone, closed candles, staleness, spread), snapshots persisted | next |
-| 4 | Agents | 8 agents with prompts/config/timeouts/retries/token limits; deterministic fallback with LLM provider `none`; orchestrator; ≤ 2 debate rounds; critical failure → NO_TRADE | |
-| 5 | Strategies | Formal rules for SMC, trend continuation, breakout+retest, session, volatility breakout, mean reversion; backtester with spread/commission/swap/slippage/latency; walk-forward + OOS; bootstrap | |
-| 6 | Risk Gate | Deterministic checks for every limit, unit tests per rule | |
-| 7 | Paper execution | Simulator, idempotent orders, reconciliation, kill switch flattening | |
-| 8 | Learning | Error taxonomy, lessons, experiment pipeline, weekly review with significance warning | |
-| 9 | Dashboard | Responsive UI on real API data; PAPER/DEMO banner; working buttons | |
-| 10 | Broker Demo | Only if technically available + verified DEMO + **separate owner permission** | blocked |
+| 1 | Audit | done | Re-read Bybit pages from a network that can reach bybit.com |
+| 2 | Foundation | done | — |
+| 3 | Data | done for MOCK + MT5 CSV import | Real-time real data feed (needs MT5 on Windows or another licensed source) |
+| 4 | Agents | done (deterministic core; Anthropic LLM review optional) | LLM path not exercised against the real API (no key here); macro bias feeds (DXY, yields) |
+| 5 | Strategies | 6 strategies + walk-forward/OOS/bootstrap | Evidence on **real** XAUUSD history (owner CSV export); session DST handling |
+| 6 | Risk Gate | done | Real contract specs from broker |
+| 7 | Paper execution | done | Partial fills / latency modelling beyond fixed slippage |
+| 8 | Learning | done | Needs real paper history to be meaningful |
+| 9 | Dashboard | done | Auth beyond localhost + optional owner token |
+| 10 | Broker Demo | **BLOCKED** | Windows host, Bybit CFD demo with MT5 access, integration tests, **separate owner permission** |

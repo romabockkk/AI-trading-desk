@@ -32,6 +32,13 @@ class Signal:
     invalidation: str
     reason: str
     rule_ids: tuple[str, ...] = ()
+    rr_target: float | None = None   # if set, TP is re-anchored to the actual fill: fill +/- rr * |fill - SL|
+
+    def target_for_entry(self, entry: float) -> float:
+        if self.rr_target is None:
+            return self.take_profit
+        r = abs(entry - self.stop_loss) * self.rr_target
+        return entry + r if self.action == "LONG" else entry - r
 
     @property
     def planned_rr(self) -> float:
@@ -93,8 +100,10 @@ class Strategy:
             return None
         if action == "SHORT" and not (tp < ref < sl):
             return None
+        rr = self.params.get("rr")
+        rr_target = rr if (rr is not None and abs(tp - self._rr_target(action, ref, sl)) < 1e-9) else None
         return Signal(self.id, self.version, i, ctx.bars[i].open_time_utc.isoformat(), action, ref, sl, tp,
-                      inval, reason, rules)
+                      inval, reason, rules, rr_target)
 
     def _rr_target(self, action: str, ref: float, sl: float) -> float:
         r = abs(ref - sl) * self.params.get("rr", 2.0)
