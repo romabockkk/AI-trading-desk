@@ -100,6 +100,7 @@ class AccountTradeMode(str, Enum):
     DEMO = "DEMO"
     CONTEST = "CONTEST"
     REAL = "REAL"
+    PAPER = "PAPER"       # local simulator, never a broker account
     UNKNOWN = "UNKNOWN"
 
 

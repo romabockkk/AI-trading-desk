@@ -13,6 +13,7 @@ import hashlib
 import tomllib
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,6 +57,10 @@ class RiskLimits(BaseModel):
     max_effective_leverage: float = Field(gt=0, le=20.0)
     max_quote_age_seconds: float = Field(gt=0, le=120)
     max_candle_age_seconds_m5: float = Field(gt=0, le=3600)
+    # What to do when macro/news data is UNKNOWN. BROKER_DEMO always denies on UNKNOWN.
+    news_unknown_policy: Literal["DENY", "ALLOW_PAPER_ONLY"] = "ALLOW_PAPER_ONLY"
+    news_blackout_minutes: int = Field(default=30, ge=0, le=240)
+    max_entry_deviation_atr: float = Field(default=0.5, gt=0, le=3.0)
 
     @field_validator("require_stop_loss")
     @classmethod

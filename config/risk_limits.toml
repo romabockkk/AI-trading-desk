@@ -17,3 +17,6 @@ min_margin_level_pct = 1000.0       # equity / margin * 100 must stay above this
 max_effective_leverage = 5.0        # notional / equity
 max_quote_age_seconds = 10
 max_candle_age_seconds_m5 = 900
+news_unknown_policy = "ALLOW_PAPER_ONLY"   # DENY | ALLOW_PAPER_ONLY  (BROKER_DEMO always denies on UNKNOWN)
+news_blackout_minutes = 30          # no new trades +/- N minutes around HIGH-impact events
+max_entry_deviation_atr = 0.5       # proposal entry must be within N*ATR of the live quote

@@ -1,0 +1,45 @@
+# Per-agent runtime configuration. Owner-editable. Agents cannot change this file.
+# llm_review: whether an LLM (if TRADEDESK_LLM_PROVIDER != none) reviews the deterministic report.
+# An LLM review can only make the outcome MORE conservative (add objections / downgrade to NO_TRADE).
+
+[defaults]
+timeout_s = 20
+retries = 1
+max_tokens = 1200
+llm_review = false
+
+[agents.CHIEF]
+critical = true
+tools = ["read_reports", "read_debate", "read_strategy_registry", "write_decision"]
+llm_review = true
+
+[agents.MARKET_STRUCTURE]
+critical = true
+tools = ["read_snapshot", "structure_analyzer"]
+
+[agents.QUANT]
+critical = false
+tools = ["read_snapshot", "strategy_signals", "read_experiments"]
+
+[agents.MACRO]
+critical = true
+tools = ["read_calendar_csv"]
+
+[agents.RISK_MANAGER]
+critical = true
+tools = ["read_spec", "read_account", "position_sizer"]
+timeout_s = 10
+
+[agents.SKEPTIC]
+critical = true
+tools = ["read_reports", "read_experiments", "read_snapshot"]
+llm_review = true
+
+[agents.EXECUTION]
+critical = false
+tools = ["paper_broker", "broker_demo_adapter(guarded)"]
+retries = 0
+
+[agents.PERFORMANCE]
+critical = false
+tools = ["read_trades", "write_lessons"]

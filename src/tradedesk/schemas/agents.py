@@ -167,6 +167,9 @@ class AgentReport(_Strict):
     sources: list[SourceRef] = Field(default_factory=list)
     payload: dict | None = None
     error: str | None = None
+    llm_review: dict | None = None
+    attempts: int = 1
+    latency_ms: int | None = None
 
     @property
     def is_critical(self) -> bool:
