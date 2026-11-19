@@ -1,0 +1,19 @@
+# OWNER-ONLY risk limits. Agents and the LLM have read-only access.
+# These are conservative STARTING values for testing. They are NOT proven optimal or safe.
+# Any change is recorded in audit_log with the file hash on next startup.
+
+[limits]
+max_risk_per_trade_pct = 0.5        # % of equity at risk per trade (stop distance x size x tick value)
+max_total_open_risk_pct = 1.0       # % of equity at risk across all open positions
+max_daily_drawdown_pct = 2.0        # stop new trades for the UTC day after this equity drop
+max_concurrent_positions = 1
+min_reward_risk = 2.0               # target RR; must also be supported by tests
+max_consecutive_losses = 2          # then pause for review
+require_stop_loss = true
+max_spread_points = 50              # XAUUSD: reject when spread (in points) above this; verify vs real spec
+max_spread_to_stop_ratio = 0.15     # spread must be <= 15% of stop distance
+max_margin_usage_pct = 10.0         # used margin / equity after new order
+min_margin_level_pct = 1000.0       # equity / margin * 100 must stay above this (far above stop-out)
+max_effective_leverage = 5.0        # notional / equity
+max_quote_age_seconds = 10
+max_candle_age_seconds_m5 = 900

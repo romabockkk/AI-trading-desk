@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradedesk"
+version = "0.1.0"
+description = "AI TradFi Trading Team: research / backtest / paper trading desk for Bybit CFD (XAUUSD first). No live trading."
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+# MetaTrader5 ships Windows-only wheels. Install it only on a Windows host with the MT5 terminal.
+mt5 = ["MetaTrader5>=5.0.45; platform_system == 'Windows'"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tradedesk = ["db/migrations/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
