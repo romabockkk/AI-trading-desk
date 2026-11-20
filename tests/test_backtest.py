@@ -122,3 +122,13 @@ def test_walk_forward_out_of_sample_only():
 def test_walk_forward_needs_data():
     m5 = MockFeed("XAUUSD").candles_m5(datetime(2026, 1, 5, tzinfo=UTC), datetime(2026, 1, 9, tzinfo=UTC))
     assert "error" in walk_forward(ALL_STRATEGIES["MEAN_REVERSION"], m5, SPEC, folds=4)
+
+
+def test_backtest_leverage_cap_limits_size():
+    bars = m15_bars(flat(61) + [(2650, 2650.5, 2649.5, 2650)] + [(2650, 2650, 2640, 2641)] + flat(5, 2641))
+    free = run_backtest(OneShot(), [], SPEC, BacktestConfig(costs=CostModel(default_spread_points=0, slippage_points=0)),
+                        prebuilt=(bars, {})).trades[0]
+    capped = run_backtest(OneShot(), [], SPEC, BacktestConfig(max_leverage=1.0, costs=CostModel(default_spread_points=0,
+                                                                                               slippage_points=0)),
+                          prebuilt=(bars, {})).trades[0]
+    assert free.lots == pytest.approx(0.1) and capped.lots == pytest.approx(0.03)    # 1x of $10k at $2650 x 100 oz

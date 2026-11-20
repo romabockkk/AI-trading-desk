@@ -26,7 +26,8 @@ def relaxed(**upd):
 
 # A tight 30-cent gold stop with a 4-cent spread: min lot 0.01 = 1 oz ->
 # $0.30 + $0.04 spread + $0.06 commission = $0.40 <= $0.50 budget; spread/stop = 13% <= 15%
-OK_LIMITS = relaxed(max_effective_leverage=50.0, max_margin_usage_pct=10.0)
+OK_LIMITS = relaxed(max_effective_leverage=50.0, max_margin_usage_pct=10.0, max_risk_per_trade_pct=0.5)
+SMALL = relaxed(max_risk_per_trade_pct=0.5)          # the former $100 / 0.5% owner setting
 
 
 def base(**kw):
@@ -38,7 +39,7 @@ def base(**kw):
     return GateInput(**d)
 
 
-def failed(gi, limits=OK_LIMITS):
+def failed(gi, limits=OK_LIMITS):  # default: $100/0.5% scenario limits
     return {c.name for c in evaluate(gi, limits).failed}
 
 
@@ -56,7 +57,7 @@ def test_realistic_gold_spread_blocks_100_usd_trades():
 
 def test_shipped_limits_deny_100_usd_gold_on_leverage():
     """With the shipped 5x effective-leverage cap, 1 oz of gold (~$4000) on $100 equity (40x) is refused."""
-    f = failed(base(), LIMITS)
+    f = failed(base(), SMALL)
     assert "EFFECTIVE_LEVERAGE" in f
 
 
@@ -108,7 +109,41 @@ def test_each_rule_denies(kw, name):
 
 
 def test_margin_usage_limit():
-    assert "MARGIN_USAGE" in failed(base(), relaxed(max_effective_leverage=50.0, max_margin_usage_pct=5.0))
+    assert "MARGIN_USAGE" in failed(base(), relaxed(max_effective_leverage=50.0, max_margin_usage_pct=5.0,
+                                                    max_risk_per_trade_pct=0.5))
+
+
+# ---------------- shipped owner limits: $1000 account, 1% risk, leverage <= 5x
+def test_shipped_limits_are_1pct_and_5x():
+    assert LIMITS.limits.max_risk_per_trade_pct == 1.0 and LIMITS.limits.max_effective_leverage == 5.0
+
+
+def test_1000_usd_gold_moderate_stop_allowed():
+    """$5 stop, 50-cent spread: 0.01 lot risks (5 + 0.5) x 1 + 0.06 = $5.56 <= $10; exposure ~$4000 = 4x <= 5x."""
+    p = prop(entry=4000.50, sl=3995.50, tp=4011.0)
+    g = evaluate(base(proposal=p, quote=q(4000.00, 4000.50), account=acct(equity=1000.0), atr=5.0), LIMITS)
+    assert g.result.value == "ALLOW", g.failed
+    assert g.volume_lots == 0.01 and g.risk_money == pytest.approx(5.56)
+
+
+def test_1000_usd_gold_wide_stop_refused():
+    p = prop(entry=4000.50, sl=3988.50, tp=4030.0)          # $12 stop -> 0.01 lot risks $12.56 > $10
+    g = evaluate(base(proposal=p, quote=q(4000.00, 4000.50), account=acct(equity=1000.0), atr=12.0), LIMITS)
+    assert "MIN_VOLUME_WITHIN_RISK" in {c.name for c in g.failed}
+
+
+def test_1000_usd_gold_tight_stop_refused_by_spread_ratio():
+    p = prop(entry=4000.50, sl=3998.50, tp=4004.6)          # $2 stop vs 50c spread = 25% > 15%
+    g = evaluate(base(proposal=p, quote=q(4000.00, 4000.50), account=acct(equity=1000.0), atr=2.0), LIMITS)
+    assert "SPREAD_TO_STOP_RATIO" in {c.name for c in g.failed}
+
+
+def test_leverage_cap_still_binds_for_two_lots_worth():
+    """Larger stops never raise size above budget; but a 0.02-lot position on $1000 at $4000 is 8x -> refused."""
+    inst2 = gold_instrument(volume_min=0.02, volume_step=0.01)
+    p = prop(entry=4000.50, sl=3998.0, tp=4006.0)
+    g = evaluate(base(instrument=inst2, proposal=p, quote=q(4000.00, 4000.50), account=acct(equity=1000.0), atr=3.0), LIMITS)
+    assert "EFFECTIVE_LEVERAGE" in {c.name for c in g.failed}
 
 
 def test_no_trade_proposal_denied():
@@ -118,7 +153,7 @@ def test_no_trade_proposal_denied():
 
 def test_news_unknown_policy():
     assert "NEWS" not in failed(base(news_blackout=None))
-    strict = relaxed(max_effective_leverage=50.0, news_unknown_policy="DENY")
+    strict = relaxed(max_effective_leverage=50.0, max_risk_per_trade_pct=0.5, news_unknown_policy="DENY")
     assert "NEWS" in failed(base(news_blackout=None), strict)
 
 

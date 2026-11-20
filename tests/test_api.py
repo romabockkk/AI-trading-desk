@@ -18,7 +18,7 @@ def client(settings, **upd):
     return TestClient(create_app(s, runtime=rt, start_background=False))
 
 
-def test_status_dashboard_and_100_usd_account(settings):
+def test_status_dashboard_and_1000_usd_account(settings):
     with client(settings) as c:
         assert c.get("/health").json()["ok"] is True
         s = c.get("/api/status").json()
@@ -26,7 +26,7 @@ def test_status_dashboard_and_100_usd_account(settings):
         assert len(s["agents"]) == 8 and all(v["status"] == "NO_RUN_YET" for v in s["agents"].values())
         d = c.get("/api/dashboard").json()
         a = d["account"]
-        assert a["balance"] == 100.0 and a["equity"] == 100.0 and a["free_margin"] == 100.0 and a["total_pnl"] == 0
+        assert a["balance"] == 1000.0 and a["equity"] == 1000.0 and a["free_margin"] == 1000.0 and a["total_pnl"] == 0
         assert d["stats"]["n_trades"] == 0
         feas = {f["symbol"]: f for f in d["feasibility"]}
         assert feas["XAUUSD"]["status"] == "SPEC INCOMPLETE"
@@ -69,7 +69,7 @@ def test_close_all_and_reset_require_confirmation(settings):
         assert c.post("/api/actions/reset-account", json={"confirm": "yes"}).status_code == 422
         old = c.get("/api/dashboard").json()["account"]["account_id"]
         r = c.post("/api/actions/reset-account", json={"confirm": "RESET", "reason": "test"}).json()
-        assert r["archived"] == old and r["balance"] == 100.0
+        assert r["archived"] == old and r["balance"] == 1000.0
 
 
 def test_owner_token_enforced(settings):
@@ -89,7 +89,7 @@ def test_spec_entry_makes_feasibility_computable(settings):
         assert r.json()["complete"] is True
         f = {x["symbol"]: x for x in c.get("/api/feasibility").json()}["XAUUSD"]
         assert f["min_lot"] == 0.01 and f["usd_per_1_price_unit_at_min_lot"] == pytest.approx(1.0)
-        assert f["commission_at_min_lot"] == pytest.approx(0.06) and f["risk_budget_usd"] == pytest.approx(0.5)
+        assert f["commission_at_min_lot"] == pytest.approx(0.06) and f["risk_budget_usd"] == pytest.approx(10.0)
 
 
 def test_access_token_protects_everything(settings):
@@ -132,7 +132,7 @@ def test_self_check_on_running_system(settings):
         c.post("/api/actions/analyze-now?symbol=XAUUSD")
         sc = c.get("/api/self-check").json()
         by = {x["check"]: x for x in sc["checks"]}
-        assert by["initial balance is $100"]["ok"] and by["balance equals ledger sum"]["ok"]
+        assert by["initial balance is $1,000 (configured)"]["ok"] and by["balance equals ledger sum"]["ok"]
         assert by["all 8 agents reported in the last cycle"]["ok"]
         refusals = [x for x in sc["checks"] if x["check"].startswith("Risk Gate refuses")]
         assert len(refusals) == 12 and all(x["ok"] for x in refusals)

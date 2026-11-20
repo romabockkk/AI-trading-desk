@@ -3,7 +3,7 @@
 # Any change is recorded in audit_log with the file hash on next startup.
 
 [limits]
-max_risk_per_trade_pct = 0.5        # % of equity at risk per trade (stop distance x size x tick value)
+max_risk_per_trade_pct = 1.0        # % of equity at risk per trade incl. spread + commission (owner decision 2026-11-20, was 0.5)
 max_total_open_risk_pct = 1.0       # % of equity at risk across all open positions
 max_daily_drawdown_pct = 2.0        # stop new trades for the UTC day after this equity drop
 max_concurrent_positions = 1

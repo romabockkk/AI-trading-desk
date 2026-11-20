@@ -9,7 +9,7 @@ A Chief and seven AI agents analyse gold (XAUUSD), silver, FX pairs and indices,
 
 | Area | State |
 |---|---|
-| PaperBroker | Virtual $100 account with an append-only money ledger. Simulates bid/ask fills, slippage, commission at open, tiered margin, free margin, margin level, swap at server midnight (triple-swap day), stop-out, SL/TP on quotes and bars, realized/unrealized PnL. Survives restarts; no duplicate orders; reset archives the old account. |
+| PaperBroker | Virtual $1000 account (owner setting 2026-11-20; risk 1% per trade, leverage <= 5x) with an append-only money ledger. Simulates bid/ask fills, slippage, commission at open, tiered margin, free margin, margin level, swap at server midnight (triple-swap day), stop-out, SL/TP on quotes and bars, realized/unrealized PnL. Survives restarts; no duplicate orders; reset archives the old account. |
 | Specs | **No invented values.** Confirmed from Bybit Help Center: XAUUSD contract 100, margin 0.2%, commission $6/lot (metals, FX). Min lot, lot step, tick size and swap rates are **still missing**. Until you enter them from the Bybit app, every trade is NO TRADE. |
 | Live quotes | Read-only providers: **OANDA v20** (official, real-time; plug in a practice token later: `OANDA_API_TOKEN`) and **Dukascopy** (public; publishes ~25 min after each hour, so its quotes are always STALE). **Without a fresh quote no new paper trade is opened.** Source, quote time and delay are shown per symbol. |
 | History (research) | Real **Dukascopy** M1 bid/ask candles, stored in SQLite (`python -m tradedesk fetch-history`), topped up daily. Used only for backtests and walk-forward OOS tests (`python -m tradedesk research`). It is always labelled HISTORICAL, never as a live quote. |

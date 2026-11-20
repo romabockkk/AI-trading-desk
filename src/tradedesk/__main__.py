@@ -53,18 +53,21 @@ def research(conn, symbol: str, days: int) -> dict:
     if not m5:
         return {"error": f"no stored real {symbol} history"}
     spec = dsvc.research_spec(conn, symbol)
-    out = {"symbol": symbol, "history_provider": prov, "m5_bars": len(m5), "from": m5[0].open_time_utc,
+    eq0 = get_settings().tradedesk_paper_initial_balance
+    lim = load_risk_limits(get_settings().tradedesk_risk_limits_file).limits
+    risk, lev = lim.max_risk_per_trade_pct, lim.max_effective_leverage
+    out = {"symbol": symbol, "paper_equity": eq0, "risk_pct": risk, "history_provider": prov, "m5_bars": len(m5), "from": m5[0].open_time_utc,
            "to": m5[-1].open_time_utc, "spec_for_sizing": spec.source.name, "strategies": {}}
 
     class _Svc:
         allow_mock_research = False
     for sid in ALL_STRATEGIES:
         ev = experiments.run_evidence(conn, _Svc(), sid, "1.0.0", symbol, end, days=days, folds=3)
-        bt = run_backtest(ALL_STRATEGIES[sid](), m5, spec, BacktestConfig(initial_equity=100.0, risk_pct=0.5),
+        bt = run_backtest(ALL_STRATEGIES[sid](), m5, spec, BacktestConfig(initial_equity=eq0, risk_pct=risk, max_leverage=lev),
                           data_is_mock=False)
         out["strategies"][sid] = {"experiment_id": ev["experiment_id"], "oos": ev["oos_metrics"], "bootstrap": ev["bootstrap"],
                                   "positive_folds": f"{ev['positive_folds']}/{ev['n_folds']}", "conclusion": ev["conclusion"],
-                                  "usd100_in_sample": {"trades": len(bt.trades), "signals_not_executable": bt.skipped_signals,
+                                  "paper_account_in_sample": {"trades": len(bt.trades), "signals_not_executable": bt.skipped_signals,
                                                        **{k: bt.metrics()[k] for k in ("net_pnl", "max_drawdown_pct")}}}
     return out
 

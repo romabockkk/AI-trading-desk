@@ -4,10 +4,10 @@ from pydantic import ValidationError
 from tradedesk.config import Mode, RiskLimits, Settings, load_risk_limits
 
 
-def test_defaults_internal_paper_100_usd_real_providers():
+def test_defaults_internal_paper_1000_usd_real_providers():
     s = Settings(_env_file=None)
     assert s.mode is Mode.PAPER
-    assert s.tradedesk_paper_initial_balance == 100.0
+    assert s.tradedesk_paper_initial_balance == 1000.0
     assert "MOCK" not in s.providers and s.providers[0] == "OANDA"
     assert s.symbols[0] == "XAUUSD"
 
@@ -55,7 +55,8 @@ def test_no_order_sending_code_exists():
 
 def test_shipped_risk_limits_match_spec():
     lim = load_risk_limits("config/risk_limits.toml").limits
-    assert lim.max_risk_per_trade_pct == 0.5
+    assert lim.max_risk_per_trade_pct == 1.0
+    assert lim.max_effective_leverage == 5.0
     assert lim.max_total_open_risk_pct == 1.0
     assert lim.max_daily_drawdown_pct == 2.0
     assert lim.max_concurrent_positions == 1

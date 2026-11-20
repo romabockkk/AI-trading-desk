@@ -39,6 +39,7 @@ class BacktestConfig:
     risk_pct: float = 0.5
     max_hold_bars: int = 96
     daily_dd_stop_pct: float = 2.0
+    max_leverage: float | None = None        # cap notional/equity like the live Risk Gate (None = no cap)
     costs: CostModel = field(default_factory=CostModel)
 
 
@@ -178,6 +179,13 @@ def run_backtest(strategy: Strategy, m5: list[Candle], spec: SymbolSpec, cfg: Ba
             i += 1
             continue
         lots, rmoney = size_position(spec, equity, cfg.risk_pct, entry, stop)
+        if lots > 0 and cfg.max_leverage is not None:
+            cap = math.floor(cfg.max_leverage * equity / (entry * spec.contract_size) / spec.volume_step + 1e-9) * spec.volume_step
+            if cap < spec.volume_min:
+                lots = 0.0
+            elif lots > cap:
+                rmoney = rmoney * cap / lots
+                lots = round(cap, 8)
         if lots <= 0:
             skipped += 1
             i += 1

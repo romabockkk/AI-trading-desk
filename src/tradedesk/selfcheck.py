@@ -34,8 +34,10 @@ def run(conn: sqlite3.Connection, runtime, now: datetime) -> dict:
 
     pb = runtime.paper(conn)
     acc = conn.execute("SELECT * FROM paper_accounts WHERE account_id=?", (pb.account_id,)).fetchone()
-    add("initial balance is $100", acc["initial_balance"] == runtime.settings.tradedesk_paper_initial_balance == 100.0,
-        f"initial_balance={acc['initial_balance']}")
+    want = runtime.settings.tradedesk_paper_initial_balance
+    add(f"initial balance is ${want:,.0f} (configured)", acc["initial_balance"] == want,
+        f"account initial_balance={acc['initial_balance']}" + ("" if acc["initial_balance"] == want else
+                                                              " — account created under an older setting; owner reset needed"))
     led = conn.execute("SELECT COALESCE(SUM(amount),0) s, COUNT(*) n FROM account_ledger WHERE account_id=?",
                        (pb.account_id,)).fetchone()
     add("balance equals ledger sum", abs(pb.balance() - led["s"]) < 1e-9, f"balance={pb.balance():.4f}, ledger rows={led['n']}")
@@ -81,15 +83,18 @@ def run(conn: sqlite3.Connection, runtime, now: datetime) -> dict:
         "stale quote (25 min old)": gi(quote=fresh.model_copy(update={"time_utc": now - timedelta(minutes=25)})),
         "MOCK quote": gi(quote=fresh.model_copy(update={"source": DataSource(name="MOCK", is_mock=True)})),
         "incomplete instrument spec": gi(instrument=None, spec_missing=("volume_min",)),
-        "stop so wide the minimum lot exceeds 0.5% risk": gi(proposal=TradeProposal(
-            decision_id="probe", cycle_id="probe", symbol="PROBE", action=Action.LONG, entry=1000.05, stop_loss=990.0,
-            take_profit=1030.0, created_utc=now)),
+        "stop so wide the minimum lot exceeds the per-trade risk": gi(proposal=TradeProposal(
+            decision_id="probe", cycle_id="probe", symbol="PROBE", action=Action.LONG, entry=1000.05,
+            stop_loss=1000.05 - 3 * max(acct["equity"], 1) * runtime.limits.limits.max_risk_per_trade_pct / 100,
+            take_profit=1000.05 + 9 * max(acct["equity"], 1) * runtime.limits.limits.max_risk_per_trade_pct / 100,
+            created_utc=now)),
         "reward/risk below 2": gi(proposal=TradeProposal(decision_id="probe", cycle_id="probe", symbol="PROBE",
                                                          action=Action.LONG, entry=1000.05, stop_loss=999.75,
                                                          take_profit=1000.20, created_utc=now)),
         "second position (max 1)": gi(open_positions=(rgate.OpenPositionRisk("OTHER", "BUY", 0.3, "x"),)),
         "averaging into an open position": gi(open_positions=(rgate.OpenPositionRisk("PROBE", "BUY", 0.3, "x"),)),
-        "daily loss limit hit": gi(account={**acct, "daily_pnl": -2.5, "day_start_equity": 100.0, "equity": 97.5}),
+        "daily loss limit hit": gi(account={**acct, "day_start_equity": acct["equity"],
+                                            "daily_pnl": -acct["equity"] * (runtime.limits.limits.max_daily_drawdown_pct + 0.5) / 100}),
         "two consecutive losses": gi(consecutive_losses=2),
         "kill switch on": gi(kill_switch_on=True),
         "news blackout": gi(news_blackout=True),

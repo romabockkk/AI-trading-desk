@@ -162,11 +162,14 @@ def test_incomplete_spec_never_trades(conn, monkeypatch):
     assert r["action"] == "NO_TRADE" and "volume_min" in r["spec_missing"]
 
 
-def test_default_100_usd_account_refuses_atr_sized_gold_trade(conn, monkeypatch):
+def test_small_100_usd_account_refuses_atr_sized_gold_trade(conn, monkeypatch):
+    from tradedesk.config import LoadedRiskLimits
     bias = _h4_bias(conn)
     _inject_signal(monkeypatch, "SHORT" if bias == "BEARISH" else "LONG", _good_evidence())
     complete_gold_spec(conn)
-    o = Orchestrator(conn, settings(), LIMITS, DS)            # default: $100
+    small = LoadedRiskLimits(limits=LIMITS.limits.model_copy(update={"max_risk_per_trade_pct": 0.5}),
+                             source_path="x", sha256=LIMITS.sha256)
+    o = Orchestrator(conn, settings(tradedesk_paper_initial_balance=100.0), small, DS)   # former $100 / 0.5% setting
     registry.activate(conn, "TREND_CONTINUATION", "1.0.0", "OWNER", "test")
     r = o.run_cycle("XAUUSD", NOW)
     assert o.paper.balance() == 100.0

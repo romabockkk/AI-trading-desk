@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     tradedesk_history_auto: bool = True      # top up Dukascopy history once per UTC day (research only)
 
     # Internal paper account (house rules of the PaperBroker; not a broker's terms).
-    tradedesk_paper_initial_balance: float = Field(default=100.0, gt=0)
+    tradedesk_paper_initial_balance: float = Field(default=1000.0, gt=0)
     tradedesk_paper_slippage_points: float = Field(default=2.0, ge=0)
     tradedesk_paper_stop_out_level_pct: float = Field(default=50.0, gt=0, le=1000)
 
