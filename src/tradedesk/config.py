@@ -49,6 +49,10 @@ class RiskLimits(BaseModel):
     require_stop_loss: bool
     max_spread_points: float = Field(gt=0)
     max_spread_to_stop_ratio: float = Field(gt=0, le=0.5)
+    max_spread_to_atr_ratio: float = Field(default=0.15, gt=0, le=1.0)
+    max_weekly_drawdown_pct: float = Field(default=4.0, gt=0, le=10.0)
+    max_total_drawdown_pct: float = Field(default=10.0, gt=0, le=30.0)
+    max_trades_per_day: int = Field(default=3, ge=1, le=20)
     max_margin_usage_pct: float = Field(gt=0, le=30.0)
     min_margin_level_pct: float = Field(ge=300.0)
     max_effective_leverage: float = Field(gt=0, le=100.0)
@@ -107,7 +111,7 @@ class Settings(BaseSettings):
     # Market data: comma-separated provider chain, tried in order. MOCK is never used unless named explicitly.
     tradedesk_data_source: str = "OANDA,DUKASCOPY"
     tradedesk_symbols: str = "XAUUSD,XAGUSD,EURUSD,GBPUSD,USDJPY,US500"
-    tradedesk_quote_poll_seconds: int = Field(default=15, ge=2, le=600)
+    tradedesk_quote_poll_seconds: int = Field(default=5, ge=2, le=600)
     oanda_api_token: SecretStr = SecretStr("")
     oanda_account_id: str = ""
     oanda_base_url: str = "https://api-fxpractice.oanda.com"

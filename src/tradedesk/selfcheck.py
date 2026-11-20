@@ -96,6 +96,12 @@ def run(conn: sqlite3.Connection, runtime, now: datetime) -> dict:
         "daily loss limit hit": gi(account={**acct, "day_start_equity": acct["equity"],
                                             "daily_pnl": -acct["equity"] * (runtime.limits.limits.max_daily_drawdown_pct + 0.5) / 100}),
         "two consecutive losses": gi(consecutive_losses=2),
+        "weekly loss limit hit": gi(account={**acct, "week_start_equity": acct["equity"],
+                                             "weekly_pnl": -acct["equity"] * (runtime.limits.limits.max_weekly_drawdown_pct + 0.5) / 100}),
+        "max drawdown circuit breaker": gi(account={**acct, "equity": acct["initial_balance"] *
+                                                    (1 - (runtime.limits.limits.max_total_drawdown_pct + 1) / 100)}),
+        "too many trades today": gi(account={**acct, "trades_today": runtime.limits.limits.max_trades_per_day}),
+        "abnormally wide spread": gi(quote=fresh.model_copy(update={"ask": 1000.50})),
         "kill switch on": gi(kill_switch_on=True),
         "news blackout": gi(news_blackout=True),
         "critical agent failed": gi(critical_failures=("MACRO",)),

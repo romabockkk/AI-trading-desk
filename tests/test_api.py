@@ -135,5 +135,5 @@ def test_self_check_on_running_system(settings):
         assert by["initial balance is $1,000 (configured)"]["ok"] and by["balance equals ledger sum"]["ok"]
         assert by["all 8 agents reported in the last cycle"]["ok"]
         refusals = [x for x in sc["checks"] if x["check"].startswith("Risk Gate refuses")]
-        assert len(refusals) == 12 and all(x["ok"] for x in refusals)
+        assert len(refusals) == 16 and all(x["ok"] for x in refusals)
         assert sc["ok"] is True

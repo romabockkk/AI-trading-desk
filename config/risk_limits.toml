@@ -1,23 +1,34 @@
-# OWNER-ONLY risk limits. Agents and the LLM have read-only access.
-# These are conservative STARTING values for testing. They are NOT proven optimal or safe.
+# OWNER risk limits (owner delegated the choice to the desk lead on 2026-11-20; owner fixed: $1000, 1%/trade, <= 5x).
+# Agents and the LLM have read-only access. Values are conservative professional norms, NOT proven optimal.
 # Any change is recorded in audit_log with the file hash on next startup.
 
 [limits]
-max_risk_per_trade_pct = 1.0        # % of equity at risk per trade incl. spread + commission (owner decision 2026-11-20, was 0.5)
-max_total_open_risk_pct = 1.0       # % of equity at risk across all open positions
-max_daily_drawdown_pct = 2.0        # stop new trades for the UTC day after this equity drop
-max_concurrent_positions = 1
-min_reward_risk = 2.0               # target RR; must also be supported by tests
-max_consecutive_losses = 2          # then pause for review
+# --- per trade
+max_risk_per_trade_pct = 1.0        # loss at stop incl. spread + commission, % of equity (owner)
+min_reward_risk = 2.0               # target >= 2R at the live fill price
 require_stop_loss = true
-max_spread_points = 50              # XAUUSD: reject when spread (in points) above this; verify vs real spec
-max_spread_to_stop_ratio = 0.15     # spread must be <= 15% of stop distance
-max_margin_usage_pct = 10.0         # used margin / equity after new order
-min_margin_level_pct = 1000.0       # equity / margin * 100 must stay above this (far above stop-out)
-max_effective_leverage = 5.0        # notional / equity
+max_entry_deviation_atr = 0.5       # live price within 0.5 ATR of the proposed entry
+
+# --- exposure
+max_total_open_risk_pct = 1.0       # all open positions together
+max_concurrent_positions = 1
+max_effective_leverage = 5.0        # notional / equity (owner)
+max_margin_usage_pct = 10.0         # used margin / equity after the new order
+min_margin_level_pct = 1000.0       # equity / margin; far above any stop-out level
+
+# --- loss circuit breakers
+max_daily_drawdown_pct = 2.0        # no new trades for the rest of the UTC day
+max_weekly_drawdown_pct = 4.0       # no new trades for the rest of the ISO week
+max_total_drawdown_pct = 10.0       # equity <= 90% of the initial balance: kill switch, owner review required
+max_consecutive_losses = 2          # pause new trades until the owner acknowledges a review
+max_trades_per_day = 3              # anti-overtrading
+
+# --- costs and data quality
+max_spread_to_stop_ratio = 0.15     # spread <= 15% of the stop distance
+max_spread_to_atr_ratio = 0.15      # spread <= 15% of M15 ATR (catches abnormal spread widening on any symbol)
+max_spread_points = 500             # coarse sanity cap only; the two relative checks above do the real work
 max_quote_age_seconds = 10
 max_candle_age_seconds_m5 = 900
-news_unknown_policy = "ALLOW_PAPER_ONLY"   # DENY | ALLOW_PAPER_ONLY  (BROKER_DEMO always denies on UNKNOWN)
-news_blackout_minutes = 30          # no new trades +/- N minutes around HIGH-impact events
-max_entry_deviation_atr = 0.5       # proposal entry must be within N*ATR of the live quote
-paper_allow_unproven_strategies = false   # PAPER only: allow strategies without OOS edge to collect paper evidence
+news_unknown_policy = "ALLOW_PAPER_ONLY"   # DENY | ALLOW_PAPER_ONLY
+news_blackout_minutes = 30          # no new trades +/- 30 min around HIGH-impact events
+paper_allow_unproven_strategies = false

@@ -175,3 +175,13 @@ def test_small_100_usd_account_refuses_atr_sized_gold_trade(conn, monkeypatch):
     assert o.paper.balance() == 100.0
     assert r["action"] == "NO_TRADE" and r["risk_gate"] == "DENY"
     assert any(f.startswith("MIN_VOLUME_WITHIN_RISK") for f in r["gate_failures"])
+
+
+def test_max_drawdown_triggers_kill_switch(conn):
+    o = orch(conn)
+    aid = o.paper.account_id
+    conn.execute("INSERT INTO account_ledger(account_id, created_utc, kind, amount, note) VALUES (?,?,?,?,?)",
+                 (aid, NOW.isoformat(), "REALIZED_PNL", -1100.0, "test: simulated 11% loss"))
+    o.monitor_positions(NOW)
+    assert db.get_state(conn, "kill_switch") == "ON"
+    assert conn.execute("SELECT COUNT(*) FROM risk_events WHERE event_type='MAX_DRAWDOWN_CIRCUIT_BREAKER'").fetchone()[0] == 1

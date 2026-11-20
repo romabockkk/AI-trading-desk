@@ -212,3 +212,11 @@ def test_daily_pnl_tracks_from_day_start(conn):
     buy(pb)
     s = pb.snapshot({"XAUUSD": q(4000.0, 4000.2)}, {"XAUUSD": gold()}, T0)
     assert s["daily_pnl"] == pytest.approx(-0.26) and s["total_pnl"] == pytest.approx(-0.26)
+
+
+def test_snapshot_reports_week_and_trades_today(conn):
+    decision(conn)
+    pb = broker(conn)
+    buy(pb)
+    s = pb.snapshot({"XAUUSD": q(4000.0, 4000.2)}, {"XAUUSD": gold()}, T0)
+    assert s["trades_today"] == 1 and s["week_start_equity"] == 100.0 and s["weekly_pnl"] == pytest.approx(-0.26)

@@ -196,12 +196,22 @@ class PaperBroker:
             db.set_state(self.conn, key, ds, "SYSTEM")
         initial = self.conn.execute("SELECT initial_balance FROM paper_accounts WHERE account_id=?",
                                     (self.account_id,)).fetchone()["initial_balance"]
+        iso = now.isocalendar()
+        wkey = f"week_start_equity:{self.account_id}:{iso[0]}-W{iso[1]:02d}"
+        ws = db.get_state(self.conn, wkey)
+        if ws is None:
+            ws = f"{equity:.10f}"
+            db.set_state(self.conn, wkey, ws, "SYSTEM")
+        trades_today = self.conn.execute("SELECT COUNT(*) FROM orders WHERE account_id=? AND substr(created_utc,1,10)=?",
+                                         (self.account_id, day)).fetchone()[0]
         return {"account_id": self.account_id, "currency": "USD", "initial_balance": initial,
                 "balance": round(bal, 4), "equity": round(equity, 4), "unrealized_pnl": round(upnl, 4),
                 "swap_accrued": round(swap, 4), "margin": round(margin, 4), "free_margin": round(equity - margin, 4),
                 "margin_level_pct": round(equity / margin * 100, 2) if margin > 0 else None,
                 "day_start_equity": round(float(ds), 4), "daily_pnl": round(equity - float(ds), 4),
                 "total_pnl": round(equity - initial, 4), "unpriced_positions": unpriced,
+                "week_start_equity": round(float(ws), 4), "weekly_pnl": round(equity - float(ws), 4),
+                "trades_today": trades_today,
                 "open_positions": len(self.open_positions())}
 
     def account_info(self, quotes, instruments, now) -> AccountInfo:

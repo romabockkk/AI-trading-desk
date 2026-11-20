@@ -94,4 +94,5 @@ def gold_instrument(commission=6.0, swap_long=-50.0, swap_short=10.0, margin_pct
 
 def acct(equity=100.0, margin=0.0, daily_pnl=0.0):
     return {"equity": equity, "balance": equity, "margin": margin, "free_margin": equity - margin,
-            "daily_pnl": daily_pnl, "day_start_equity": equity - daily_pnl, "initial_balance": 100.0}
+            "daily_pnl": daily_pnl, "day_start_equity": equity - daily_pnl, "initial_balance": equity,
+            "week_start_equity": equity, "weekly_pnl": 0.0, "trades_today": 0}

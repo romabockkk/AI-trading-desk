@@ -100,6 +100,9 @@ def evaluate(inp: GateInput, loaded: LoadedRiskLimits) -> GateDecision:
         ratio = spread_price / stop_dist if stop_dist > 0 else float("inf")
         chk("SPREAD_TO_STOP_RATIO", ratio <= L.max_spread_to_stop_ratio, f"{ratio:.3f} (max {L.max_spread_to_stop_ratio})")
         if inp.atr:
+            sr = spread_price / inp.atr
+            chk("SPREAD_TO_ATR_RATIO", sr <= L.max_spread_to_atr_ratio, f"{sr:.3f} of ATR (max {L.max_spread_to_atr_ratio})")
+        if inp.atr:
             dev = abs(entry - p.entry) / inp.atr
             chk("ENTRY_NEAR_QUOTE", dev <= L.max_entry_deviation_atr, f"{dev:.2f} ATR from proposal")
         else:
@@ -153,7 +156,16 @@ def evaluate(inp: GateInput, loaded: LoadedRiskLimits) -> GateDecision:
         chk("DAILY_LOSS_LIMIT", dd < L.max_daily_drawdown_pct, f"today {dd:.2f}% loss (stop at {L.max_daily_drawdown_pct}%)")
     else:
         chk("DAILY_LOSS_LIMIT", False, "account unknown")
-    chk("LOSS_STREAK", inp.consecutive_losses < L.max_consecutive_losses,
+    if inp.account:
+        a = inp.account
+        wk = -a.get("weekly_pnl", 0.0) / a["week_start_equity"] * 100 if a.get("week_start_equity") else 0.0
+        chk("WEEKLY_LOSS_LIMIT", wk < L.max_weekly_drawdown_pct, f"this week {wk:.2f}% loss (stop at {L.max_weekly_drawdown_pct}%)")
+        tot = (a["initial_balance"] - a["equity"]) / a["initial_balance"] * 100 if a.get("initial_balance") else 0.0
+        chk("TOTAL_DRAWDOWN_LIMIT", tot < L.max_total_drawdown_pct,
+            f"{tot:.2f}% below initial balance (circuit breaker at {L.max_total_drawdown_pct}%)")
+        n = a.get("trades_today", 0)
+        chk("TRADES_PER_DAY", n < L.max_trades_per_day, f"{n} trades today (max {L.max_trades_per_day})")
+        chk("LOSS_STREAK", inp.consecutive_losses < L.max_consecutive_losses,
         f"{inp.consecutive_losses} consecutive losses (pause at {L.max_consecutive_losses})")
 
     if inp.news_blackout is True:

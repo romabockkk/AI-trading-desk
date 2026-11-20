@@ -80,6 +80,13 @@ class Orchestrator:
                     closed += self.paper.on_quote(s, q, inst, now, self.limits.limits.max_quote_age_seconds)
             self.paper.apply_swaps(insts, now)
             closed += self.paper.check_stop_out(quotes, insts, now)
+        snap = self.paper.snapshot(*self.instruments_and_quotes(now, syms), now) if syms else self.paper.snapshot({}, {}, now)
+        dd = (snap["initial_balance"] - snap["equity"]) / snap["initial_balance"] * 100
+        if dd >= self.limits.limits.max_total_drawdown_pct and db.get_state(self.conn, "kill_switch") != "ON":
+            db.set_state(self.conn, "kill_switch", "ON", "SYSTEM")
+            self.conn.execute("INSERT INTO risk_events(created_utc, event_type, severity, details) VALUES (?,?,?,?)",
+                              (db.utc_now_iso(), "MAX_DRAWDOWN_CIRCUIT_BREAKER", "CRITICAL",
+                               json.dumps({"drawdown_pct": round(dd, 3), "equity": snap["equity"]})))
         lessons = review.analyze_new_trades(self.conn) if closed else []
         return {"closed": closed, "stale_quotes": stale, "lessons": lessons, "reconcile": self.paper.reconcile()}
 
