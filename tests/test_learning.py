@@ -4,10 +4,17 @@ from datetime import timedelta
 import pytest
 
 from helpers import T0
-from tradedesk.data.service import MarketDataService
+from helpers import market
+from tradedesk.data.mock_feed import MockFeed
+from tradedesk.data.service import store_bars
 from tradedesk.learning import experiments, registry, review
 
-DS = MarketDataService(history_days=20)
+DS = market()
+DS.allow_mock_research = True      # research on MOCK history only because these tests have no real history
+
+
+def _history(conn, days=120):
+    store_bars(conn, MockFeed("XAUUSD", seed=3).candles_m5(T0 - timedelta(days=days), T0), "MOCK")
 
 
 def test_registry_registers_six_research_versions(conn):
@@ -34,8 +41,15 @@ def test_only_owner_can_activate_and_rollback(conn):
     assert conn.execute("SELECT COUNT(*) FROM audit_log WHERE action='STRATEGY_ACTIVATED'").fetchone()[0] == 3
 
 
+def test_evidence_requires_stored_history(conn):
+    registry.ensure_registered(conn)
+    with pytest.raises(registry.RegistryError, match="history"):
+        experiments.run_evidence(conn, DS, "TREND_CONTINUATION", "1.0.0", "XAUUSD", T0, days=60)
+
+
 def test_evidence_and_experiment_pipeline(conn):
     registry.ensure_registered(conn)
+    _history(conn)
     ev = experiments.run_evidence(conn, DS, "TREND_CONTINUATION", "1.0.0", "XAUUSD", T0, days=120, folds=3)
     assert ev["n_folds"] == 3 and "MOCK" in ev["conclusion"]
     eid, got = experiments.latest_evidence(conn, "TREND_CONTINUATION", "1.0.0")

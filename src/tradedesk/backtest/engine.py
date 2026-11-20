@@ -111,6 +111,13 @@ def compute_metrics(trades: list[BtTrade] | list[dict], equity_curve: list[float
     }
 
 
+def _spread(bar: Candle, c: CostModel, pt: float) -> float:
+    """Spread in price units: real bar spread when the data has it, else spread points, else the cost-model default."""
+    if bar.spread_price is not None:
+        return bar.spread_price
+    return (bar.spread_points if bar.spread_points is not None else c.default_spread_points) * pt
+
+
 def _rollovers(t0, t1) -> int:
     """Number of 21:00 UTC rollovers in (t0, t1], Wednesday counts triple."""
     n = 0
@@ -160,8 +167,8 @@ def run_backtest(strategy: Strategy, m5: list[Candle], spec: SymbolSpec, cfg: Ba
         if ei >= end_index:
             break
         eb = bars[ei]
-        spread_pts = eb.spread_points if eb.spread_points is not None else c.default_spread_points
-        spread = spread_pts * pt
+        spread = _spread(eb, c, pt)
+        spread_pts = spread / pt
         slip = c.slippage_points * pt
         long = sig.action == "LONG"
         entry = eb.open + spread + slip if long else eb.open - slip
@@ -178,7 +185,7 @@ def run_backtest(strategy: Strategy, m5: list[Candle], spec: SymbolSpec, cfg: Ba
         exit_px, reason, xi = None, "TIME_EXIT", min(ei + cfg.max_hold_bars, end_index - 1)
         for j in range(ei, min(ei + cfg.max_hold_bars, end_index - 1) + 1):
             b = bars[j]
-            sp = (b.spread_points if b.spread_points is not None else c.default_spread_points) * pt
+            sp = _spread(b, c, pt)
             if long:
                 if b.open <= stop and j > ei:
                     exit_px, reason, xi = b.open - slip, "STOP_LOSS", j
@@ -201,7 +208,7 @@ def run_backtest(strategy: Strategy, m5: list[Candle], spec: SymbolSpec, cfg: Ba
                     break
         if exit_px is None:
             b = bars[xi]
-            sp = (b.spread_points if b.spread_points is not None else c.default_spread_points) * pt
+            sp = _spread(b, c, pt)
             exit_px = b.close if long else b.close + sp
         mpu = money_per_price_unit(spec, lots)
         gross = (exit_px - entry) * mpu if long else (entry - exit_px) * mpu

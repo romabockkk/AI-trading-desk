@@ -4,7 +4,7 @@
  2 Market Structure, Quant, Macro     6 Risk Manager independent check (VETO)
    run independently                  7 deterministic Risk Gate -> ALLOW / DENY
  3 (paper positions are marked first) 8 Chief records the decision with ids of its inputs
- 4 Chief hypothesis + alternative     9 Execution only on ALLOW in PAPER (BROKER_DEMO is guarded)
+ 4 Chief hypothesis + alternative     9 Execution only on ALLOW, only in the internal PaperBroker
                                      10 Performance analyses closed trades
 
 Every report and debate message is persisted. A failed critical agent => NO_TRADE.
@@ -17,13 +17,13 @@ import uuid
 from datetime import datetime
 
 from ..config import LoadedRiskLimits, Mode, Settings
-from ..data.service import MarketDataService, persist_snapshot
+from ..data.service import MarketService, persist_snapshot
 from ..db import database as db
-from ..execution.paper import PaperBroker
+from ..execution.paper import PaperBroker, PaperError
 from ..learning import experiments, registry, review
 from ..risk import gate as rgate
-from ..safety import can_send_broker_order
 from ..schemas.agents import AgentName, AgentReport, ReportStatus, critical_failure
+from ..schemas.market import Timeframe
 from ..schemas.trading import Action, TradeProposal
 from ..strategies.library import ALL_STRATEGIES
 from .base import load_agent_configs
@@ -37,12 +37,51 @@ RESPONDER = {"STRUCTURE": AgentName.MARKET_STRUCTURE, "STATISTICS": AgentName.QU
 
 class Orchestrator:
     def __init__(self, conn: sqlite3.Connection, settings: Settings, limits: LoadedRiskLimits,
-                 data: MarketDataService, llm: LLMClient | None = None, agent_config_path: str = "config/agents.toml"):
+                 data: MarketService, llm: LLMClient | None = None, agent_config_path: str = "config/agents.toml"):
         self.conn, self.settings, self.limits, self.data = conn, settings, limits, data
         cfgs = load_agent_configs(agent_config_path)
         self.agents = {n: AGENT_CLASSES[n](cfgs[n], llm) for n in AgentName}
-        self.paper = PaperBroker(conn)
+        self.paper = PaperBroker(conn, initial_balance=settings.tradedesk_paper_initial_balance,
+                                 slippage_points=settings.tradedesk_paper_slippage_points,
+                                 stop_out_level_pct=settings.tradedesk_paper_stop_out_level_pct)
         registry.ensure_registered(conn)
+        from ..marketdata import specs as _specs
+        _specs.seed(conn)
+
+    def instruments_and_quotes(self, now: datetime, symbols: set[str]) -> tuple[dict, dict]:
+        quotes, insts = {}, {}
+        for s in symbols:
+            lt = self.data.latest(self.conn, s)
+            if lt:
+                quotes[s] = lt["quote"]
+            inst, _ = self.data.instrument(self.conn, s, now)
+            if inst:
+                insts[s] = inst
+        return quotes, insts
+
+    def monitor_positions(self, now: datetime) -> dict:
+        """Manage open paper positions: fresh quotes -> SL/TP, bars between polls, swaps, stop-out."""
+        syms = {p["symbol"] for p in self.paper.open_positions()}
+        closed: list[dict] = []
+        stale = []
+        if syms:
+            self.data.poll_quotes(self.conn, now, tuple(syms | {"USDJPY"}))
+            quotes, insts = self.instruments_and_quotes(now, syms)
+            for s in syms:
+                inst, q = insts.get(s), quotes.get(s)
+                if inst is None:
+                    db.log_error(self.conn, "monitor", "ERROR", f"{s}: open position but instrument spec unavailable")
+                    continue
+                bars, _ = self.data.bars(self.conn, s, Timeframe.M5, now, 50)
+                closed += self.paper.on_bars(s, bars, inst)
+                if q is not None:
+                    if (now - q.time_utc).total_seconds() > self.limits.limits.max_quote_age_seconds:
+                        stale.append(s)
+                    closed += self.paper.on_quote(s, q, inst, now, self.limits.limits.max_quote_age_seconds)
+            self.paper.apply_swaps(insts, now)
+            closed += self.paper.check_stop_out(quotes, insts, now)
+        lessons = review.analyze_new_trades(self.conn) if closed else []
+        return {"closed": closed, "stale_quotes": stale, "lessons": lessons, "reconcile": self.paper.reconcile()}
 
     # ------------------------------------------------------------------ helpers
     def _strategies(self) -> tuple[list[ActiveStrategy], list[ActiveStrategy]]:
@@ -94,19 +133,19 @@ class Orchestrator:
                  details={"symbol": symbol, "mode": self.settings.mode.value})
         L = self.limits.limits
 
-        snap = self.data.snapshot(symbol, now, L)
+        snap = self.data.snapshot(self.conn, symbol, now, L)
         persist_snapshot(self.conn, snap)
         # 3. mark paper positions to the latest bars before deciding
-        closed_now = self.paper.process_bars(symbol, snap.m5, snap.spec) if snap.spec else []
-        quotes = {symbol: snap.quote} if snap.quote else {}
-        specs = {symbol: snap.spec} if snap.spec else {}
-        account = self.paper.account_info(quotes, specs, now) if self.settings.mode is Mode.PAPER else None
+        closed_now = self.monitor_positions(now)["closed"]
+        quotes, insts = self.instruments_and_quotes(now, {p["symbol"] for p in self.paper.open_positions()} | {symbol})
+        acct_snap = self.paper.snapshot(quotes, insts, now)
+        account = self.paper.account_info(quotes, insts, now)
         open_pos = self.paper.open_positions()
         active, research = self._strategies()
         ctx = CycleContext(conn=self.conn, settings=self.settings, limits=self.limits, snapshot=snap, now=now,
                            active=active, research=research, account=account, open_positions=open_pos,
-                           consecutive_losses=review.consecutive_losses(self.conn),
-                           day_start_equity=self.paper.day_start_equity(now, account.equity) if account else None)
+                           consecutive_losses=review.consecutive_losses(self.conn, account_id=self.paper.account_id),
+                           day_start_equity=acct_snap["day_start_equity"])
 
         # 2. independent analysts
         for a in (AgentName.MARKET_STRUCTURE, AgentName.QUANT, AgentName.MACRO):
@@ -181,11 +220,10 @@ class Orchestrator:
                                      snapshot_ids=(snap.snapshot_id,), created_utc=now)
             ordered = frozenset(r["decision_id"] for r in self.conn.execute("SELECT decision_id FROM orders"))
             gi = rgate.GateInput(
-                mode=self.settings.mode, proposal=proposal, spec=snap.spec, quote=snap.quote, account=account, now_utc=now,
-                day_start_equity=ctx.day_start_equity, consecutive_losses=ctx.consecutive_losses,
-                open_positions=tuple(rgate.OpenPositionRisk(p["symbol"], p["side"], abs(p["open_price"] - p["stop_loss"]) *
-                                                            p["volume_lots"] * snap.spec.tick_value / snap.spec.tick_size,
-                                                            p["client_order_id"]) for p in open_pos) if snap.spec else (),
+                mode=self.settings.mode, proposal=proposal, instrument=snap.instrument, spec_missing=tuple(snap.spec_missing),
+                quote=snap.quote, account=acct_snap, now_utc=now, consecutive_losses=ctx.consecutive_losses,
+                open_positions=tuple(rgate.OpenPositionRisk(p["symbol"], p["side"], p["planned_risk_money"] or 0.0,
+                                                            p["client_order_id"]) for p in open_pos),
                 kill_switch_on=db.get_state(self.conn, "kill_switch") == "ON",
                 paused=db.get_state(self.conn, "paused") == "true", market_open=snap.market_open, data_valid=snap.valid,
                 critical_failures=tuple(c.value for c in crit),
@@ -219,7 +257,7 @@ class Orchestrator:
             (decision_id, cycle_id, now.isoformat(), self.settings.mode.value, symbol,
              sig["strategy_id"] if sig else None, sig["version"] if sig else None,
              action, sig["entry"] if sig else None, sig["sl"] if sig else None, sig["tp"] if sig else None, lots,
-             round(risk_money / account.equity * 100, 4) if (risk_money and account) else None,
+             round(risk_money / acct_snap["equity"] * 100, 4) if risk_money else None,
              sig["planned_rr"] if sig else None, gate_res, json.dumps(gate_reasons), self.limits.sha256,
              json.dumps(reasons), json.dumps(objection_rows, default=str), json.dumps([snap.snapshot_id]),
              json.dumps([r.report_id for r in ctx.reports.values()]), no_trade_reason))
@@ -230,21 +268,21 @@ class Orchestrator:
         execution = {"venue": "NONE", "client_order_id": None, "status": "NOT_EXECUTED", "broker_confirmation": None,
                      "reconciliation_ok": None}
         if gate_res == "ALLOW" and action in ("LONG", "SHORT"):
-            if self.settings.mode is Mode.PAPER:
+            try:
                 res = self.paper.place_order(decision_id=decision_id, symbol=symbol, side="BUY" if action == "LONG" else "SELL",
                                              volume_lots=lots, stop_loss=sig["sl"], take_profit=sig["tp"], quote=snap.quote,
-                                             spec=snap.spec, now=now)
+                                             inst=snap.instrument, now=now,
+                                             max_quote_age_seconds=L.max_quote_age_seconds)
                 rec = self.paper.reconcile()
                 execution = {"venue": "PAPER", "client_order_id": res.get("client_order_id"),
                              "status": "DUPLICATE_BLOCKED" if res["duplicate"] else "FILLED",
-                             "broker_confirmation": {"simulated": True, "price": res.get("price")},
+                             "broker_confirmation": {"internal_paper_broker": True, "price": res.get("price"),
+                                                     "commission": res.get("commission"), "margin": res.get("margin")},
                              "reconciliation_ok": rec["ok"]}
-            elif self.settings.mode is Mode.BROKER_DEMO:
-                g = can_send_broker_order(self.settings, None, integration_tests_passed=False,
-                                          kill_switch_on=db.get_state(self.conn, "kill_switch") == "ON",
-                                          paused=db.get_state(self.conn, "paused") == "true")
-                execution = {"venue": "BROKER_DEMO", "client_order_id": None, "status": "BLOCKED",
-                             "broker_confirmation": {"reasons": list(g.reasons)}, "reconciliation_ok": None}
+            except PaperError as e:
+                db.log_error(self.conn, "execution", "ERROR", f"paper order rejected: {e}", cycle_id=cycle_id)
+                execution = {"venue": "PAPER", "client_order_id": None, "status": "REJECTED",
+                             "broker_confirmation": {"error": str(e)}, "reconciliation_ok": self.paper.reconcile()["ok"]}
         ctx.execution_result = execution
         self._run(ctx, AgentName.EXECUTION, cycle_id)
 
@@ -254,7 +292,8 @@ class Orchestrator:
         self._run(ctx, AgentName.PERFORMANCE, cycle_id)
 
         return {"cycle_id": cycle_id, "decision_id": decision_id, "symbol": symbol, "mode": self.settings.mode.value,
-                "data_is_mock": snap.is_mock, "data_valid": snap.valid, "action": action, "risk_gate": gate_res,
+                "data_source": snap.source, "data_is_mock": snap.is_mock, "data_valid": snap.valid,
+                "quote_latency_s": snap.quote_latency_s, "spec_missing": snap.spec_missing, "action": action, "risk_gate": gate_res,
                 "gate_failures": gate_reasons, "reasons": reasons, "no_trade_reason": no_trade_reason,
                 "execution": execution, "closed_trades": closed_now, "lessons": perf,
                 "agent_status": {a.value: r.status.value for a, r in ctx.reports.items()},

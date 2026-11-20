@@ -1,18 +1,19 @@
 import pytest
 from pydantic import ValidationError
 
-from tradedesk.config import (OWNER_DEMO_AUTH_PHRASE, Mode, RiskLimits, Settings, load_risk_limits)
+from tradedesk.config import Mode, RiskLimits, Settings, load_risk_limits
 
 
-def test_default_mode_is_paper_and_broker_demo_disabled():
+def test_defaults_internal_paper_100_usd_real_providers():
     s = Settings(_env_file=None)
     assert s.mode is Mode.PAPER
-    assert s.tradedesk_broker_demo_enabled is False
-    assert s.owner_demo_authorized is False
+    assert s.tradedesk_paper_initial_balance == 100.0
+    assert "MOCK" not in s.providers and s.providers[0] == "OANDA"
+    assert s.symbols[0] == "XAUUSD"
 
 
-@pytest.mark.parametrize("bad", ["LIVE", "live", "REAL", "PRODUCTION"])
-def test_live_mode_is_rejected(bad):
+@pytest.mark.parametrize("bad", ["LIVE", "live", "REAL", "PRODUCTION", "BROKER_DEMO", "demo"])
+def test_live_and_broker_modes_rejected(bad):
     with pytest.raises(ValidationError, match="forbidden"):
         Settings(_env_file=None, tradedesk_mode=bad)
 
@@ -22,20 +23,34 @@ def test_unknown_mode_rejected():
         Settings(_env_file=None, tradedesk_mode="FUTURES")
 
 
-def test_no_live_member_in_mode_enum():
-    assert "LIVE" not in Mode.__members__
+def test_mode_enum_has_no_live_or_broker():
+    assert set(Mode.__members__) == {"RESEARCH", "BACKTEST", "PAPER"}
 
 
-def test_owner_phrase_must_match_exactly():
-    assert not Settings(_env_file=None, tradedesk_owner_demo_authorization="yes").owner_demo_authorized
-    assert Settings(_env_file=None, tradedesk_owner_demo_authorization=OWNER_DEMO_AUTH_PHRASE).owner_demo_authorized
+def test_public_bind_requires_access_token():
+    with pytest.raises(ValidationError, match="ACCESS_TOKEN"):
+        Settings(_env_file=None, tradedesk_api_host="0.0.0.0")
+    assert Settings(_env_file=None, tradedesk_api_host="0.0.0.0", tradedesk_access_token="x" * 20)
 
 
 def test_public_dict_has_no_secrets():
-    s = Settings(_env_file=None, mt5_password="hunter2", llm_api_key="sk-secret",
-                 tradedesk_owner_demo_authorization=OWNER_DEMO_AUTH_PHRASE)
+    s = Settings(_env_file=None, oanda_api_token="oanda-secret", llm_api_key="sk-secret",
+                 tradedesk_owner_token="own-secret", tradedesk_access_token="acc-secret")
     dumped = repr(s.public_dict()) + repr(s)
-    assert "hunter2" not in dumped and "sk-secret" not in dumped and OWNER_DEMO_AUTH_PHRASE not in dumped
+    for secret in ("oanda-secret", "sk-secret", "own-secret", "acc-secret"):
+        assert secret not in dumped
+
+
+def test_no_order_sending_code_exists():
+    """Owner directive: the team never sends orders to Bybit or any broker."""
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "src" / "tradedesk"
+    text = "\n".join(p.read_text() for p in src.rglob("*.py"))
+    for forbidden in ("order_send", "place_demo_order", "/v5/order", "orders/create", "/v3/accounts/{", "MarketOrder"):
+        if forbidden == "/v3/accounts/{":
+            continue   # read-only pricing path is allowed; checked below
+        assert forbidden not in text, forbidden
+    assert "/orders" not in text and "/trades" not in text.replace("/api/trades", "")
 
 
 def test_shipped_risk_limits_match_spec():

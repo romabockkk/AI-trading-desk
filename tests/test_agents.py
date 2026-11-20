@@ -8,7 +8,6 @@ from helpers import LIMITS, T0, settings
 from tradedesk.agents.base import AgentOutput, BaseAgent, load_agent_configs
 from tradedesk.agents.llm import LLMResult, LLMReview, make_llm
 from tradedesk.agents.team import MacroAgent, CycleContext
-from tradedesk.data.service import MarketDataService
 from tradedesk.schemas.agents import CRITICAL_AGENTS, AgentName, ReportStatus
 
 CFG = load_agent_configs()
@@ -89,7 +88,8 @@ def test_llm_provider_none_and_unknown():
 
 
 def _ctx(tmp_path, conn, calendar=None):
-    snap = MarketDataService(history_days=15).snapshot("XAUUSD", T0 + timedelta(minutes=2))
+    from helpers import market
+    snap = market().snapshot(conn, "XAUUSD", T0 + timedelta(minutes=2))
     ctx = CycleContext(conn=conn, settings=settings(), limits=LIMITS, snapshot=snap, now=T0, active=[], research=[],
                        account=None, open_positions=[], consecutive_losses=0, day_start_equity=None,
                        calendar_path=tmp_path / "calendar.csv")

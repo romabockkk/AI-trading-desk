@@ -27,7 +27,7 @@ def resample(m5: list[Candle], tf: Timeframe, as_of: datetime, include_open: boo
             if cur is not None:
                 out.append(cur)
             cur = {"t": b, "o": c.open, "h": c.high, "l": c.low, "c": c.close, "v": c.tick_volume,
-                   "s": c.spread_points}
+                   "s": c.spread_points, "sp": c.spread_price}
         else:
             cur["h"] = max(cur["h"], c.high)
             cur["l"] = min(cur["l"], c.low)
@@ -35,6 +35,8 @@ def resample(m5: list[Candle], tf: Timeframe, as_of: datetime, include_open: boo
             cur["v"] += c.tick_volume
             if c.spread_points is not None:
                 cur["s"] = max(cur["s"] or 0, c.spread_points)
+            if c.spread_price is not None:
+                cur["sp"] = max(cur["sp"] or 0, c.spread_price)
     if cur is not None:
         out.append(cur)
     sym = m5[0].symbol if m5 else ""
@@ -44,5 +46,6 @@ def resample(m5: list[Candle], tf: Timeframe, as_of: datetime, include_open: boo
         if not closed and not include_open:
             continue
         res.append(Candle(symbol=sym, timeframe=tf, open_time_utc=d["t"], open=d["o"], high=d["h"], low=d["l"],
-                          close=d["c"], tick_volume=d["v"], spread_points=d["s"], is_closed=closed))
+                          close=d["c"], tick_volume=d["v"], spread_points=d["s"], spread_price=d["sp"],
+                          is_closed=closed))
     return res

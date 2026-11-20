@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime, timedelta
 
 from ..backtest.engine import BacktestConfig, walk_forward
+from ..data import service as dsvc
+from ..schemas.market import Timeframe
 from ..db import database as db
 from ..strategies.library import ALL_STRATEGIES
 from . import registry
@@ -34,20 +36,24 @@ def run_evidence(conn: sqlite3.Connection, data_service, strategy_id: str, versi
     if row is None:
         raise registry.RegistryError(f"unknown version {strategy_id}@{version}")
     params = json.loads(row["params"])
-    m5 = data_service.m5(symbol, end_utc - timedelta(days=days), end_utc)
-    spec = data_service.spec(symbol)
+    m5, prov = dsvc.history(conn, symbol, Timeframe.M5, end_utc - timedelta(days=days), end_utc,
+                            allow_mock=getattr(data_service, "allow_mock_research", False))
+    if not m5:
+        raise registry.RegistryError(f"no stored {symbol} M5 history: import an MT5 CSV export or fetch provider history")
+    spec = dsvc.research_spec(conn, symbol)
+    is_mock = prov == "MOCK"
     cls = ALL_STRATEGIES[strategy_id]
     # evidence run uses the version's fixed params: grid disabled by an empty grid on a subclass
     fixed = type(f"{cls.__name__}Fixed", (cls,), {"param_grid": {}})
-    wf = walk_forward(fixed, m5, spec, BacktestConfig(), folds=folds, base_params=params, data_is_mock=spec.source.is_mock)
+    wf = walk_forward(fixed, m5, spec, BacktestConfig(), folds=folds, base_params=params, data_is_mock=is_mock)
     summ = _summary(wf)
     eid = f"exp-{uuid.uuid4().hex[:10]}"
     conn.execute("INSERT INTO experiments(experiment_id, created_utc, hypothesis, stage, strategy_id, baseline_version,"
                  " candidate_version, dataset, oos_metrics, conclusion) VALUES (?,?,?,?,?,?,?,?,?,?)",
                  (eid, db.utc_now_iso(), f"evidence: walk-forward OOS of {strategy_id}@{version}", "OUT_OF_SAMPLE",
                   strategy_id, version, version,
-                  json.dumps({"symbol": symbol, "days": days, "end_utc": end_utc.isoformat(), "source": data_service.source,
-                              "is_mock": spec.source.is_mock, "folds": folds}),
+                  json.dumps({"symbol": symbol, "days": days, "end_utc": end_utc.isoformat(), "history_provider": prov,
+                              "bars": len(m5), "spec": spec.source.name, "is_mock": is_mock, "folds": folds}),
                   json.dumps(summ), _conclusion(summ)))
     db.audit(conn, "QUANT", "EXPERIMENT_EVIDENCE", entity="experiments", entity_id=eid, details={"strategy": strategy_id})
     return {"experiment_id": eid, **summ, "conclusion": _conclusion(summ)}
@@ -86,24 +92,28 @@ def propose(conn: sqlite3.Connection, data_service, strategy_id: str, baseline_v
     conn.execute("INSERT INTO experiments(experiment_id, created_utc, hypothesis, stage, strategy_id, baseline_version,"
                  " dataset) VALUES (?,?,?,?,?,?,?)", (eid, db.utc_now_iso(), hypothesis, "PROPOSAL", strategy_id,
                                                       baseline_version, json.dumps({"candidate_params": candidate_params})))
-    m5 = data_service.m5(symbol, end_utc - timedelta(days=days), end_utc)
-    spec = data_service.spec(symbol)
+    m5, prov = dsvc.history(conn, symbol, Timeframe.M5, end_utc - timedelta(days=days), end_utc,
+                            allow_mock=getattr(data_service, "allow_mock_research", False))
+    if not m5:
+        raise registry.RegistryError(f"no stored {symbol} M5 history")
+    spec = dsvc.research_spec(conn, symbol)
+    is_mock = prov == "MOCK"
     fixed = type(f"{cls.__name__}Fixed", (cls,), {"param_grid": {}})
     base_wf = _summary(walk_forward(fixed, m5, spec, folds=folds, base_params=json.loads(base["params"]),
-                                    data_is_mock=spec.source.is_mock))
+                                    data_is_mock=is_mock))
     cand_wf = _summary(walk_forward(fixed, m5, spec, folds=folds, base_params=candidate_params,
-                                    data_is_mock=spec.source.is_mock))
+                                    data_is_mock=is_mock))
     bo, co = base_wf.get("oos_metrics") or {}, cand_wf.get("oos_metrics") or {}
     better = (co.get("n_trades") or 0) >= MIN_OOS_TRADES and (co.get("expectancy_r") or -9) > (bo.get("expectancy_r") or -9) \
         and ((cand_wf.get("bootstrap") or {}).get("ci95") or [-1])[0] > 0
     stage = "AWAITING_APPROVAL" if better else "REJECTED"
     concl = ("candidate beats baseline OOS; awaiting OWNER approval" if better else
              "candidate does not beat baseline with sufficient OOS evidence") + \
-        (" (MOCK DATA)" if spec.source.is_mock else "")
+        (" (MOCK DATA)" if is_mock else "")
     conn.execute("UPDATE experiments SET stage=?, oos_metrics=?, baseline_metrics=?, conclusion=?, dataset=? WHERE experiment_id=?",
                  (stage, json.dumps(cand_wf), json.dumps(base_wf), concl,
                   json.dumps({"candidate_params": candidate_params, "symbol": symbol, "days": days,
-                              "end_utc": end_utc.isoformat(), "is_mock": spec.source.is_mock}), eid))
+                              "end_utc": end_utc.isoformat(), "history_provider": prov, "is_mock": is_mock}), eid))
     db.audit(conn, "QUANT", "EXPERIMENT_EVALUATED", entity="experiments", entity_id=eid, details={"stage": stage})
     return {"experiment_id": eid, "stage": stage, "conclusion": concl, "baseline": bo, "candidate": co}
 

@@ -1,0 +1,62 @@
+# Instrument specifications used by the internal PaperBroker.
+# RULE: no invented values. Every value has a source. A required field left empty => NO TRADE for that symbol.
+# Fill missing values from the Bybit app/website: TradFi -> CFD -> <contract> -> Info (or the dashboard form).
+#
+# provider_symbols: names used by data providers (OANDA v20 instruments, Dukascopy datafeed).
+
+[sources]
+bybit_margin = "Bybit Help Center: Margin Calculations on CFD Trading (last updated 2026-07-30)"
+bybit_fees   = "Bybit Help Center: Bybit CFD Fees Explained (last updated 2026-07-30)"
+bybit_specs  = "Bybit Help Center: How to Get Started With CFD Trading (last updated 2026-08-03)"
+
+[XAUUSD]
+bybit_symbol = "XAUUSD+"                 # as shown on Bybit pages; confirm in app
+asset_class = "METAL"
+profit_currency = "USD"
+contract_size = 100                      # src: bybit_margin (example: 1 lot XAUUSD, contract size 100)
+margin_pct = 0.2                         # src: bybit_margin (tier up to 10M exposure)
+commission_per_lot = 6.0                 # src: bybit_fees (Metal, Tight-Spread mode; charged at position open)
+swap_type = "POINTS"                     # src: bybit_fees (Precious Metal swap charged by points)
+# REQUIRED, NOT YET KNOWN (take from Bybit contract Info page):
+# volume_min, volume_step, volume_max, tick_size, digits, swap_long, swap_short, swap_triple_day
+provider_symbols = { OANDA = "XAU_USD", DUKASCOPY = "XAUUSD" }
+
+[XAGUSD]
+bybit_symbol = "XAGUSD+"
+asset_class = "METAL"
+profit_currency = "USD"
+commission_per_lot = 6.0                 # src: bybit_fees (Metal)
+swap_type = "POINTS"
+provider_symbols = { OANDA = "XAG_USD", DUKASCOPY = "XAGUSD" }
+
+[EURUSD]
+bybit_symbol = "EURUSD+"
+asset_class = "FX"
+profit_currency = "USD"
+commission_per_lot = 6.0                 # src: bybit_fees (Forex)
+swap_type = "POINTS"
+provider_symbols = { OANDA = "EUR_USD", DUKASCOPY = "EURUSD" }
+
+[GBPUSD]
+bybit_symbol = "GBPUSD+"
+asset_class = "FX"
+profit_currency = "USD"
+commission_per_lot = 6.0
+swap_type = "POINTS"
+provider_symbols = { OANDA = "GBP_USD", DUKASCOPY = "GBPUSD" }
+
+[USDJPY]
+bybit_symbol = "USDJPY+"
+asset_class = "FX"
+profit_currency = "JPY"
+commission_per_lot = 6.0
+swap_type = "POINTS"
+provider_symbols = { OANDA = "USD_JPY", DUKASCOPY = "USDJPY" }
+
+[US500]
+bybit_symbol = "SP500"                   # Bybit fee example uses "SP500"; confirm in app
+asset_class = "INDEX"
+profit_currency = "USD"
+commission_per_lot = 3.0                 # src: bybit_fees ("Other Contracts" $3/lot; example: SP500 0.20 lot x 3 USDx)
+swap_type = "MONEY"                      # src: bybit_fees (Indices charged by money)
+provider_symbols = { OANDA = "SPX500_USD" }

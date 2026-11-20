@@ -20,18 +20,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-OWNER_DEMO_AUTH_PHRASE = "I_AUTHORIZE_DEMO_ORDERS_ONLY"
-
-
 class Mode(str, Enum):
     RESEARCH = "RESEARCH"
     BACKTEST = "BACKTEST"
     PAPER = "PAPER"
-    BROKER_DEMO = "BROKER_DEMO"
-    # LIVE intentionally does not exist.
+    # LIVE does not exist. BROKER_DEMO was removed by owner directive (2026-11-20):
+    # the team trades only inside the internal PaperBroker and never sends orders to any broker.
 
 
-FORBIDDEN_MODE_NAMES = {"LIVE", "REAL", "PRODUCTION", "PROD"}
+FORBIDDEN_MODE_NAMES = {"LIVE", "REAL", "PRODUCTION", "PROD", "BROKER_DEMO", "DEMO"}
 
 
 class ConfigError(ValueError):
@@ -54,15 +51,15 @@ class RiskLimits(BaseModel):
     max_spread_to_stop_ratio: float = Field(gt=0, le=0.5)
     max_margin_usage_pct: float = Field(gt=0, le=30.0)
     min_margin_level_pct: float = Field(ge=300.0)
-    max_effective_leverage: float = Field(gt=0, le=20.0)
+    max_effective_leverage: float = Field(gt=0, le=100.0)
     max_quote_age_seconds: float = Field(gt=0, le=120)
     max_candle_age_seconds_m5: float = Field(gt=0, le=3600)
-    # What to do when macro/news data is UNKNOWN. BROKER_DEMO always denies on UNKNOWN.
+    # What to do when macro/news data is UNKNOWN.
     news_unknown_policy: Literal["DENY", "ALLOW_PAPER_ONLY"] = "ALLOW_PAPER_ONLY"
     news_blackout_minutes: int = Field(default=30, ge=0, le=240)
     max_entry_deviation_atr: float = Field(default=0.5, gt=0, le=3.0)
-    # PAPER only: let strategies without demonstrated OOS edge trade, to collect paper evidence.
-    # Statistical objections are still recorded (as MEDIUM). Never applies to BROKER_DEMO.
+    # Let strategies without demonstrated OOS edge trade in PAPER, to collect paper evidence.
+    # Statistical objections are still recorded (as MEDIUM).
     paper_allow_unproven_strategies: bool = False
 
     @field_validator("require_stop_loss")
@@ -106,24 +103,30 @@ class Settings(BaseSettings):
     tradedesk_mode: str = "PAPER"
     tradedesk_db_path: str = "data/tradedesk.db"
     tradedesk_risk_limits_file: str = "config/risk_limits.toml"
-    tradedesk_broker_demo_enabled: bool = False
-    tradedesk_owner_demo_authorization: SecretStr = SecretStr("")
-    tradedesk_allowed_demo_servers: str = "Bybit-Demo"
 
-    mt5_login: str = ""
-    mt5_password: SecretStr = SecretStr("")
-    mt5_server: str = ""
-    mt5_terminal_path: str = ""
+    # Market data: comma-separated provider chain, tried in order. MOCK is never used unless named explicitly.
+    tradedesk_data_source: str = "OANDA,DUKASCOPY"
+    tradedesk_symbols: str = "XAUUSD,XAGUSD,EURUSD,GBPUSD,USDJPY,US500"
+    tradedesk_quote_poll_seconds: int = Field(default=15, ge=2, le=600)
+    oanda_api_token: SecretStr = SecretStr("")
+    oanda_account_id: str = ""
+    oanda_base_url: str = "https://api-fxpractice.oanda.com"
+
+    # Autonomy: analysis cycles every N minutes while the server runs (0 = only on demand).
+    tradedesk_cycle_minutes: int = Field(default=15, ge=0, le=1440)
+    tradedesk_autonomous: bool = True
+
+    # Internal paper account (house rules of the PaperBroker; not a broker's terms).
+    tradedesk_paper_initial_balance: float = Field(default=100.0, gt=0)
+    tradedesk_paper_slippage_points: float = Field(default=2.0, ge=0)
+    tradedesk_paper_stop_out_level_pct: float = Field(default=50.0, gt=0, le=1000)
 
     tradedesk_llm_provider: str = "none"
     tradedesk_llm_model: str = ""
     llm_api_key: SecretStr = SecretStr("")
 
-    tradedesk_data_source: str = "MOCK"
-    tradedesk_symbol: str = "XAUUSD"
-    tradedesk_scheduler_minutes: int = 0          # 0 = no automatic cycles
-    tradedesk_paper_initial_balance: float = 10_000.0
-    tradedesk_owner_token: SecretStr = SecretStr("")   # if set, owner actions require X-Owner-Token header
+    tradedesk_owner_token: SecretStr = SecretStr("")    # owner actions require X-Owner-Token when set
+    tradedesk_access_token: SecretStr = SecretStr("")   # if set, every API/dashboard request needs it
 
     tradedesk_api_host: str = "127.0.0.1"
     tradedesk_api_port: int = 8000
@@ -133,22 +136,29 @@ class Settings(BaseSettings):
     def _mode(cls, v: str) -> str:
         u = v.strip().upper()
         if u in FORBIDDEN_MODE_NAMES:
-            raise ValueError(f"mode {u!r} is forbidden: real-money trading is not implemented and not allowed")
+            raise ValueError(f"mode {u!r} is forbidden: no real or broker trading; internal PAPER only")
         if u not in Mode.__members__:
             raise ValueError(f"unknown mode {v!r}; allowed: {', '.join(Mode.__members__)}")
         return u
+
+    @model_validator(mode="after")
+    def _exposed_needs_token(self) -> "Settings":
+        if self.tradedesk_api_host not in ("127.0.0.1", "localhost", "::1") and \
+                not self.tradedesk_access_token.get_secret_value():
+            raise ValueError("binding to a non-local address requires TRADEDESK_ACCESS_TOKEN")
+        return self
 
     @property
     def mode(self) -> Mode:
         return Mode(self.tradedesk_mode)
 
     @property
-    def allowed_demo_servers(self) -> tuple[str, ...]:
-        return tuple(s.strip() for s in self.tradedesk_allowed_demo_servers.split(",") if s.strip())
+    def symbols(self) -> tuple[str, ...]:
+        return tuple(s.strip().upper() for s in self.tradedesk_symbols.split(",") if s.strip())
 
     @property
-    def owner_demo_authorized(self) -> bool:
-        return self.tradedesk_owner_demo_authorization.get_secret_value() == OWNER_DEMO_AUTH_PHRASE
+    def providers(self) -> tuple[str, ...]:
+        return tuple(s.strip().upper() for s in self.tradedesk_data_source.split(",") if s.strip())
 
     def db_path(self) -> Path:
         p = Path(self.tradedesk_db_path)
@@ -160,18 +170,20 @@ class Settings(BaseSettings):
             "mode": self.tradedesk_mode,
             "db_path": str(self.db_path()),
             "risk_limits_file": self.tradedesk_risk_limits_file,
-            "broker_demo_enabled": self.tradedesk_broker_demo_enabled,
-            "owner_demo_authorized": self.owner_demo_authorized,
-            "allowed_demo_servers": list(self.allowed_demo_servers),
-            "mt5_login_configured": bool(self.mt5_login),
-            "mt5_server": self.mt5_server or None,
+            "data_providers": list(self.providers),
+            "symbols": list(self.symbols),
+            "quote_poll_seconds": self.tradedesk_quote_poll_seconds,
+            "oanda_token_configured": bool(self.oanda_api_token.get_secret_value()),
+            "cycle_minutes": self.tradedesk_cycle_minutes,
+            "autonomous": self.tradedesk_autonomous,
+            "paper_initial_balance": self.tradedesk_paper_initial_balance,
+            "paper_slippage_points": self.tradedesk_paper_slippage_points,
+            "paper_stop_out_level_pct": self.tradedesk_paper_stop_out_level_pct,
             "llm_provider": self.tradedesk_llm_provider,
             "llm_model": self.tradedesk_llm_model or None,
             "llm_key_configured": bool(self.llm_api_key.get_secret_value()),
-            "data_source": self.tradedesk_data_source,
-            "symbol": self.tradedesk_symbol,
-            "scheduler_minutes": self.tradedesk_scheduler_minutes,
             "owner_token_required": bool(self.tradedesk_owner_token.get_secret_value()),
+            "access_token_required": bool(self.tradedesk_access_token.get_secret_value()),
         }
 
 

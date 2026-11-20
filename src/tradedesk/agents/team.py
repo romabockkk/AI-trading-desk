@@ -246,9 +246,6 @@ class ChiefAgent(BaseAgent):
                             "unresolved_objection_ids": [m["payload"]["id"] for m in unresolved]})
 
     def respond(self, ctx: CycleContext, obj: dict) -> dict:
-        if obj["category"] == "DATA" and ctx.settings.mode is Mode.PAPER and ctx.snapshot.valid:
-            return {"objection_id": obj["id"], "resolved": True,
-                    "facts": ["PAPER mode: mock data permitted for pipeline testing only; every result is flagged MOCK"]}
         return {"objection_id": obj["id"], "resolved": False, "facts": ["no counter-evidence available"]}
 
 
@@ -275,8 +272,11 @@ class SkepticAgent(BaseAgent):
         if not s.valid:
             add("DATA", f"market data invalid: {[i['code'] for i in s.issues if i['level']=='ERROR'][:5]}", "CRITICAL")
         if s.is_mock:
-            add("DATA", "snapshot source is MOCK (synthetic); conclusions do not transfer to real markets",
-                "CRITICAL" if ctx.settings.mode is Mode.BROKER_DEMO else "MEDIUM")
+            add("DATA", "snapshot source is MOCK (synthetic): never traded, even on paper", "CRITICAL")
+        if s.instrument is None:
+            add("DATA", f"instrument specification incomplete: {s.spec_missing}", "CRITICAL")
+        if s.quote is not None and (ctx.now - s.quote.time_utc).total_seconds() > ctx.limits.limits.max_quote_age_seconds:
+            add("DATA", f"quote is stale ({(ctx.now - s.quote.time_utc).total_seconds():.0f}s old, source {s.source})", "CRITICAL")
         macro = ctx.payload(AgentName.MACRO)
         if macro is None:
             add("NEWS", "Macro report missing", "CRITICAL")
@@ -331,8 +331,10 @@ class RiskManagerAgent(BaseAgent):
                                 "reasons": ["no trade proposed"]})
         if ctx.account is None:
             reasons.append("account unknown")
-        if s.spec is None or s.quote is None:
-            reasons.append("spec or quote unavailable")
+        if s.spec is None:
+            reasons.append(f"instrument spec incomplete: {s.spec_missing}")
+        if s.quote is None:
+            reasons.append("no quote")
         if reasons:
             return AgentOutput({"verdict": "VETO", "volume_lots": None, "risk_money": None, "risk_pct": None, "reasons": reasons})
         q, spec, eq = s.quote, s.spec, ctx.account.equity

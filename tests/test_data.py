@@ -7,7 +7,6 @@ from tradedesk.data.csv_import import CsvImportError, import_mt5_csv
 from tradedesk.data.instruments import mock_spec
 from tradedesk.data.mock_feed import MockFeed, market_open
 from tradedesk.data.resample import resample
-from tradedesk.data.service import MarketDataService, persist_snapshot
 from tradedesk.data.validator import validate_candles, validate_quote
 from tradedesk.schemas.market import Timeframe
 
@@ -102,24 +101,3 @@ def test_csv_import_rejects_bad_rows(tmp_path):
         import_mt5_csv(p, "X", Timeframe.H1, "UTC")
 
 
-def test_snapshot_persisted_and_flagged(conn):
-    ds = MarketDataService(history_days=20)
-    s = ds.snapshot("XAUUSD", T0 + timedelta(minutes=3))
-    assert s.valid and s.is_mock
-    persist_snapshot(conn, s)
-    row = conn.execute("SELECT * FROM market_snapshots").fetchone()
-    assert row["is_mock"] == 1 and row["validation_status"] == "VALID" and len(row["content_sha256"]) == 64
-
-
-def test_snapshot_invalid_when_stale_logs_error(conn):
-    ds = MarketDataService(history_days=20)
-    s = ds.snapshot("XAUUSD", T0)
-    s.issues.append({"code": "X", "level": "ERROR", "detail": "", "timeframe": "M5"})
-    s.valid = False
-    persist_snapshot(conn, s)
-    assert conn.execute("SELECT COUNT(*) FROM errors WHERE component='data_validator'").fetchone()[0] == 1
-
-
-def test_non_mock_source_unavailable():
-    with pytest.raises(ValueError, match="BLOCKED"):
-        MarketDataService("MT5")

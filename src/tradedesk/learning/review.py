@@ -79,10 +79,12 @@ def analyze_new_trades(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def consecutive_losses(conn: sqlite3.Connection, venue: str = "PAPER") -> int:
+def consecutive_losses(conn: sqlite3.Connection, venue: str = "PAPER", account_id: str | None = None) -> int:
     reset = db.get_state(conn, "loss_streak_reset_utc") or ""
     n = 0
-    for r in conn.execute("SELECT net_pnl, closed_utc FROM trades WHERE venue=? ORDER BY closed_utc DESC", (venue,)):
+    acc_sql, acc_args = ("AND account_id=?", (account_id,)) if account_id else ("", ())
+    for r in conn.execute(f"SELECT net_pnl, closed_utc FROM trades WHERE venue=? {acc_sql} ORDER BY closed_utc DESC",
+                          (venue,) + acc_args):
         if r["closed_utc"] <= reset:
             break
         if r["net_pnl"] <= 0:
@@ -92,13 +94,59 @@ def consecutive_losses(conn: sqlite3.Connection, venue: str = "PAPER") -> int:
     return n
 
 
-def weekly_review(conn: sqlite3.Connection, week_end_utc: datetime, venue: str = "PAPER") -> dict:
+def _account_initial(conn, account_id: str | None) -> float:
+    if account_id:
+        r = conn.execute("SELECT initial_balance FROM paper_accounts WHERE account_id=?", (account_id,)).fetchone()
+        if r:
+            return float(r["initial_balance"])
+    return float(db.get_state(conn, "paper_initial_balance") or 100)
+
+
+def daily_report(conn: sqlite3.Connection, day_utc: datetime, account_id: str) -> dict:
+    """Report for one UTC day of one paper account: trades, decisions, refusals, errors, lessons."""
+    d0 = day_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    d1 = d0 + timedelta(days=1)
+    rng = (d0.isoformat(), d1.isoformat())
+    trades = [dict(r) for r in conn.execute("SELECT * FROM trades WHERE account_id=? AND closed_utc>=? AND closed_utc<?",
+                                            (account_id,) + rng)]
+    m = compute_metrics([{"r": t["r_multiple"], "net": t["net_pnl"]} for t in trades])
+    dec = {r["action"]: r["n"] for r in conn.execute("SELECT action, COUNT(*) n FROM decisions WHERE created_utc>=? AND"
+                                                     " created_utc<? GROUP BY action", rng)}
+    refusals = {}
+    for r in conn.execute("SELECT risk_gate_reasons FROM decisions WHERE risk_gate_result='DENY' AND created_utc>=? AND"
+                          " created_utc<?", rng):
+        for f in json.loads(r["risk_gate_reasons"]):
+            k = f.split(":")[0]
+            refusals[k] = refusals.get(k, 0) + 1
+    errors = conn.execute("SELECT COUNT(*) FROM errors WHERE created_utc>=? AND created_utc<?", rng).fetchone()[0]
+    ledger = {r["kind"]: round(r["s"], 4) for r in conn.execute(
+        "SELECT kind, SUM(amount) s FROM account_ledger WHERE account_id=? AND created_utc>=? AND created_utc<? GROUP BY kind",
+        (account_id,) + rng)}
+    lessons = [dict(r) for r in conn.execute("SELECT error_category, description FROM lessons WHERE created_utc>=? AND"
+                                             " created_utc<?", rng)]
+    lines = [f"DAILY REPORT {d0.date()} (UTC) — paper account {account_id}",
+             f"Decisions: {dec or 'none'}",
+             f"Closed trades {m['n_trades']}, net {m['net_pnl']}, win rate {m['win_rate']}, expectancy {m['expectancy_r']}R",
+             f"Ledger today: {ledger or 'no money movements'}",
+             f"Most frequent Risk Gate refusals: {sorted(refusals.items(), key=lambda x: -x[1])[:5] or 'none'}",
+             f"Errors logged: {errors}; lessons: {len(lessons)}",
+             "Statistical note: a single day is never evidence of edge."]
+    metrics = {**m, "decisions": dec, "refusals": refusals, "errors": errors, "ledger": ledger, "lessons": lessons}
+    conn.execute("INSERT INTO daily_reports(day_utc, account_id, created_utc, metrics, report) VALUES (?,?,?,?,?)"
+                 " ON CONFLICT(day_utc, account_id) DO UPDATE SET created_utc=excluded.created_utc, metrics=excluded.metrics,"
+                 " report=excluded.report", (d0.date().isoformat(), account_id, db.utc_now_iso(), json.dumps(metrics, default=str),
+                                             "\n".join(lines)))
+    return {"report": "\n".join(lines), "metrics": metrics}
+
+
+def weekly_review(conn: sqlite3.Connection, week_end_utc: datetime, venue: str = "PAPER", account_id: str | None = None) -> dict:
     start = week_end_utc - timedelta(days=7)
-    trades = [dict(r) for r in conn.execute("SELECT * FROM trades WHERE venue=? AND closed_utc>=? AND closed_utc<?",
-                                            (venue, start.isoformat(), week_end_utc.isoformat()))]
-    eq0 = float(db.get_state(conn, "paper_initial_balance") or 10000)
-    prior = conn.execute("SELECT COALESCE(SUM(net_pnl),0) s FROM trades WHERE venue=? AND closed_utc<?",
-                         (venue, start.isoformat())).fetchone()["s"]
+    acc_sql, acc_args = ("AND account_id=?", (account_id,)) if account_id else ("", ())
+    trades = [dict(r) for r in conn.execute(f"SELECT * FROM trades WHERE venue=? {acc_sql} AND closed_utc>=? AND closed_utc<?",
+                                            (venue,) + acc_args + (start.isoformat(), week_end_utc.isoformat()))]
+    eq0 = _account_initial(conn, account_id)
+    prior = conn.execute(f"SELECT COALESCE(SUM(net_pnl),0) s FROM trades WHERE venue=? {acc_sql} AND closed_utc<?",
+                         (venue,) + acc_args + (start.isoformat(),)).fetchone()["s"]
     curve = [eq0 + prior]
     for t in sorted(trades, key=lambda x: x["closed_utc"]):
         curve.append(curve[-1] + t["net_pnl"])
@@ -129,11 +177,12 @@ def weekly_review(conn: sqlite3.Connection, week_end_utc: datetime, venue: str =
     report = "\n".join(lines)
     metrics = {**m, "errors": errors, "experiments": exps, "strategy_changes": changes,
                "hypotheses": hyps, "decisions": {d["action"]: d["n"] for d in decisions}}
+    venue_key = f"{venue}:{account_id}" if account_id else venue
     conn.execute("INSERT INTO weekly_reviews(week_start_utc, week_end_utc, created_utc, venue, n_trades, metrics,"
                  " statistically_sufficient, report) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(week_start_utc, venue) DO UPDATE"
                  " SET created_utc=excluded.created_utc, n_trades=excluded.n_trades, metrics=excluded.metrics,"
                  " statistically_sufficient=excluded.statistically_sufficient, report=excluded.report",
-                 (start.isoformat(), week_end_utc.isoformat(), db.utc_now_iso(), venue, m["n_trades"],
+                 (start.isoformat(), week_end_utc.isoformat(), db.utc_now_iso(), venue_key, m["n_trades"],
                   json.dumps(metrics, default=str), int(sufficient), report))
     db.audit(conn, "PERFORMANCE", "WEEKLY_REVIEW", details={"week_start": start.isoformat(), "n_trades": m["n_trades"]})
     return {"report": report, "metrics": metrics, "statistically_sufficient": sufficient}

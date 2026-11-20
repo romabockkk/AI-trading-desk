@@ -18,7 +18,7 @@ def test_migrations_idempotent(tmp_path):
     v1 = db.schema_version(c1)
     c1.close()
     c2 = db.init_db(p)
-    assert db.schema_version(c2) == v1 == ["0001_init.sql"]
+    assert db.schema_version(c2) == v1 == ["0001_init.sql", "0002_paper_accounts.sql"]
     assert db.migrate(c2) == []
 
 

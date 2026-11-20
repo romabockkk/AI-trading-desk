@@ -39,6 +39,7 @@ class Candle(BaseModel):
     tick_volume: float = Field(ge=0)
     spread_points: float | None = Field(default=None, ge=0)
     is_closed: bool
+    spread_price: float | None = Field(default=None, ge=0)   # max/close spread in price units, when known
 
     @model_validator(mode="after")
     def _ohlc(self) -> "Candle":
