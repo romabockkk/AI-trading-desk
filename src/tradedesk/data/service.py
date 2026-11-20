@@ -327,5 +327,11 @@ def research_spec(conn: sqlite3.Connection, symbol: str) -> SymbolSpec:
         s = mock_spec(symbol)
     except KeyError:
         raise ValueError(f"no spec for {symbol}") from None
-    return s.model_copy(update={"source": s.source.model_copy(update={"name": "RESEARCH-ONLY sizing spec (not Bybit)"}),
-                                "commission_per_lot": 0.0})
+    known = (specstore.get(conn, symbol) or {}).get("data", {})
+    upd = {"source": s.source.model_copy(update={"name": "RESEARCH-ONLY sizing spec: confirmed Bybit fields where known"
+                                                        " (contract size, commission), assumed min lot/step/tick"}),
+           "commission_per_lot": float(known.get("commission_per_lot", 0.0))}
+    if known.get("contract_size"):
+        cs = float(known["contract_size"])
+        upd.update(contract_size=cs, tick_value=cs * s.tick_size)
+    return s.model_copy(update=upd)

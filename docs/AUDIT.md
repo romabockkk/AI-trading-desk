@@ -98,6 +98,6 @@ See README "Status".
 |---|---|---|
 | Bybit CFD | not available | no documented quote API for CFD; demo has no MT5/API |
 | OANDA v20 practice API | implemented, **not verified live** | official documented REST API, real-time bid/ask; needs a free practice token; host not reachable from this container without that credential |
-| Dukascopy datafeed | implemented, **reachable but HTTP 429** from this container's shared IP on the very first request | public tick history; live data typically delayed (≥ 1 h) → quotes treated as STALE → NO TRADE |
+| Dukascopy datafeed | **working for history** (2026-11-20): daily BID/ASK M1 candle files downloaded and validated; frequent 503/429 throttling, so downloads are slow and resumable | quotes for the latest hour appear ~25 min after the hour → treated as STALE → no new trades. Record layout (sec, open, close, low, high, volume) checked on real files: low ≤ open,close ≤ high for every record |
 | Swissquote public BBO feed | rejected | undocumented endpoint; the request was blocked as possible unauthorised access |
 | MetaTrader 5 (read-only provider) | implemented, not usable on Linux | Windows-only package; useful later to read real Bybit specs from a live MT5 CFD account |

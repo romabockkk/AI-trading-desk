@@ -40,7 +40,7 @@ def run(conn: sqlite3.Connection, runtime, now: datetime) -> dict:
                        (pb.account_id,)).fetchone()
     add("balance equals ledger sum", abs(pb.balance() - led["s"]) < 1e-9, f"balance={pb.balance():.4f}, ledger rows={led['n']}")
     rec = pb.reconcile()
-    add("positions/orders/ledger reconcile", rec["ok"], str(rec["issues"]) if rec["issues"] else "consistent")
+    add("positions, orders and ledger reconcile", rec["ok"], str(rec["issues"]) if rec["issues"] else "consistent")
     bad = conn.execute("SELECT COUNT(*) FROM trades t LEFT JOIN orders o ON o.decision_id=t.decision_id WHERE o.client_order_id IS NULL").fetchone()[0]
     add("every trade has an order", bad == 0, f"{bad} trades without order")
     nosl = conn.execute("SELECT COUNT(*) FROM orders WHERE stop_loss IS NULL").fetchone()[0]

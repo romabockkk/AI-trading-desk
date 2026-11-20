@@ -12,7 +12,7 @@ from .db import database as db
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="tradedesk")
-    ap.add_argument("command", choices=["init-db", "status", "verify-audit", "fetch-history"])
+    ap.add_argument("command", choices=["init-db", "status", "verify-audit", "fetch-history", "research"])
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--days", type=int, default=90)
     ap.add_argument("--pause", type=float, default=4.0, help="seconds between requests (be polite)")
@@ -31,11 +31,42 @@ def main(argv: list[str] | None = None) -> int:
         res = download(conn, args.symbol, end - timedelta(days=args.days), end, DukascopyHistory(pause_s=args.pause),
                        progress=lambda d, n: print(f"{d} {n} M1 bars", flush=True))
         print(json.dumps(res, indent=2))
+    elif args.command == "research":
+        print(json.dumps(research(conn, args.symbol, args.days), indent=2, default=str))
     else:
         ok, bad = db.verify_audit_chain(conn)
         print(json.dumps({"audit_chain_ok": ok, "first_bad_id": bad}))
         return 0 if ok else 1
     return 0
+
+
+def research(conn, symbol: str, days: int) -> dict:
+    """Walk-forward OOS evidence for every strategy on STORED REAL history, plus a $100 in-sample backtest."""
+    from .backtest.engine import BacktestConfig, run_backtest
+    from .data import service as dsvc
+    from .learning import experiments, registry
+    from .schemas.market import Timeframe
+    from .strategies.library import ALL_STRATEGIES
+    registry.ensure_registered(conn)
+    end = datetime.now(timezone.utc)
+    m5, prov = dsvc.history(conn, symbol, Timeframe.M5, end - timedelta(days=days), end)
+    if not m5:
+        return {"error": f"no stored real {symbol} history"}
+    spec = dsvc.research_spec(conn, symbol)
+    out = {"symbol": symbol, "history_provider": prov, "m5_bars": len(m5), "from": m5[0].open_time_utc,
+           "to": m5[-1].open_time_utc, "spec_for_sizing": spec.source.name, "strategies": {}}
+
+    class _Svc:
+        allow_mock_research = False
+    for sid in ALL_STRATEGIES:
+        ev = experiments.run_evidence(conn, _Svc(), sid, "1.0.0", symbol, end, days=days, folds=3)
+        bt = run_backtest(ALL_STRATEGIES[sid](), m5, spec, BacktestConfig(initial_equity=100.0, risk_pct=0.5),
+                          data_is_mock=False)
+        out["strategies"][sid] = {"experiment_id": ev["experiment_id"], "oos": ev["oos_metrics"], "bootstrap": ev["bootstrap"],
+                                  "positive_folds": f"{ev['positive_folds']}/{ev['n_folds']}", "conclusion": ev["conclusion"],
+                                  "usd100_in_sample": {"trades": len(bt.trades), "signals_not_executable": bt.skipped_signals,
+                                                       **{k: bt.metrics()[k] for k in ("net_pnl", "max_drawdown_pct")}}}
+    return out
 
 
 if __name__ == "__main__":
