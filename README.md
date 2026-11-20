@@ -1,55 +1,48 @@
-# AI TradFi Trading Team
+# AI TradFi Trading Team — internal paper trading
 
-A research, backtesting and **paper** trading desk for **Bybit CFD** (formerly Bybit TradFi), starting with **XAUUSD**. A Chief and seven agents analyse the market and debate through structured messages. A deterministic Risk Gate makes the final allow/deny call.
+A Chief and seven AI agents analyse gold (XAUUSD), silver, FX pairs and indices, debate trade ideas, check each other, and trade a **virtual $100 account inside the project's own PaperBroker**. Every trade must pass a deterministic Risk Gate.
 
-> **No real money. There is no LIVE mode in the code.** Bybit Crypto Futures, TradFi Perpetuals and the Bybit V5 crypto API are not used.
-> Nothing here claims or promises profit. Every number on mock data is labelled MOCK.
+> **No orders are sent to Bybit or any other broker.** The code contains no order-sending functions; a test enforces this. LIVE and BROKER_DEMO modes do not exist.
+> Nothing here promises profit.
 
-## Status (2026-11-19)
+## Status (2026-11-20)
 
 | Area | State |
 |---|---|
-| Agents | Chief + 7 agents run in every cycle. Each has its own prompt, config, timeout, retries, token limit and strict JSON schema. Debates are persisted (≤ 2 rounds). |
-| Data | **MOCK synthetic data only.** No real market feed is reachable from this environment. An MT5 CSV importer exists for real history you export yourself. |
-| Strategies | 6 strategies with formal rules (SMC/CHoCH/OB, trend continuation, breakout+retest, London session, volatility breakout, mean reversion), all at status `RESEARCH`. **None has shown an out-of-sample edge**, even on mock data. |
-| Research | Backtests include spread, commission, swap, slippage and latency. Walk-forward OOS, bootstrap CI and Monte Carlo drawdown are implemented. |
-| Risk | Deterministic Risk Gate: 36 named checks, plus a separate Risk Manager veto. Owner-only limits: 0.5% per trade, 1% open risk, 2% daily stop, 1 position, RR ≥ 2, pause after 2 losses. |
-| Execution | **PAPER only**, in a local simulator. It is not a broker and is never shown as one. |
-| Learning | Error taxonomy, lessons, experiment pipeline (proposal → OOS → baseline → owner approval), versioning and rollback, weekly review with a significance warning. |
-| Dashboard | `http://127.0.0.1:8000/`. Desktop and phone, PAPER / BROKER DEMO banner, buttons wired to the backend. |
-| BROKER_DEMO | **BLOCKED.** See [`docs/AUDIT.md`](docs/AUDIT.md). The MT5 package is Windows-only (confirmed), and Bybit reportedly offers no MT5/API/EA access on the CFD demo (unverified). |
-| Tests | 189 passing (`python3 -m pytest`). |
+| PaperBroker | Virtual $100 account with an append-only money ledger. Simulates bid/ask fills, slippage, commission at open, tiered margin, free margin, margin level, swap at server midnight (triple-swap day), stop-out, SL/TP on quotes and bars, realized/unrealized PnL. Survives restarts; no duplicate orders; reset archives the old account. |
+| Specs | **No invented values.** Confirmed from Bybit Help Center: XAUUSD contract 100, margin 0.2%, commission $6/lot (metals, FX). Min lot, lot step, tick size and swap rates are **still missing**. Until you enter them from the Bybit app, every trade is NO TRADE. |
+| Quotes | Read-only providers: **OANDA v20** (official API, real-time bid/ask, needs a free practice token — not yet provided) and **Dukascopy** (public; HTTP 429 from this container). **Right now no real quotes arrive here, so every decision is NO TRADE.** The dashboard shows source, last update and delay. |
+| Agents | All 8 run autonomously every N minutes for every symbol while the server runs. Reports, debates (≤ 2 rounds), decisions, refusals and errors are stored in SQLite. |
+| Learning | Post-trade error classification, lessons, an experiment pipeline (proposal → walk-forward OOS → baseline comparison → owner approval), versioning and rollback. Daily and weekly reports. |
+| Dashboard | Phone-first, with tabs. Buttons: Start, Pause new trades, Emergency Stop (kill switch), Close all positions (confirm), Reset paper account (confirm), Analyze now, Review. Includes a spec editor. |
+| Hosting | **Not deployed.** It runs only while a server runs. See [`docs/DEPLOY.md`](docs/DEPLOY.md). |
+| Tests | `python3 -m pytest`, all passing. |
+
+### What $100 means in practice
+
+At 0.5% risk the budget per trade is **$0.50**. The 0.01-lot minimum for gold is about 1 oz:
+
+- every $1.00 of price movement costs $1.00;
+- Bybit's Tight-Spread commission adds $0.06.
+
+So the stop including spread must be under about $0.44. With a realistic spread, the spread-to-stop limit and the leverage cap also block the trade. The Risk Gate therefore refuses almost every gold trade at $100, and the dashboard's feasibility table shows the exact numbers. This is the expected, honest result of the limits, not a bug.
 
 ## Quick start
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env             # optional; defaults are safe (PAPER, MOCK data, LLM off)
-python3 -m pytest                # 189 tests
-scripts/run_api.sh               # then open http://127.0.0.1:8000/
+cp .env.example .env        # set OANDA_API_TOKEN for real-time quotes
+python3 -m pytest
+scripts/run_api.sh          # http://127.0.0.1:8000/
 ```
 
-Typical flow in the dashboard:
-1. **Start Analysis** runs one full cycle. With no approved strategy, the result is NO_TRADE.
-2. **OOS test** on a strategy runs a walk-forward out-of-sample evidence experiment.
-3. **Activate (owner)** puts a strategy version into PAPER. Without OOS evidence the Skeptic still blocks trades, unless you set `paper_allow_unproven_strategies = true` in `config/risk_limits.toml`.
-4. **Review** runs error analysis and the weekly report. **Emergency Stop** turns on the kill switch, pauses, and closes all paper positions.
-
-Optional settings:
-- `TRADEDESK_SCHEDULER_MINUTES=15` runs automatic cycles.
-- `TRADEDESK_LLM_PROVIDER=anthropic` with `LLM_API_KEY` enables LLM reviews. They can only make decisions more conservative.
-- Economic calendar: put a sourced CSV at `data/calendar.csv` (format in `data/calendar.example.csv`). Without it, news status is UNKNOWN.
-
-## Main API
-
-- **Read:** `GET /api/status`, `/api/dashboard`, `/api/candles`, `/api/decisions`, `/api/cycles/{id}`, `/api/strategies`, `/api/audit`, `/api/errors`.
-- **Actions:** `POST /api/actions/{start-analysis,pause,resume,emergency-stop,review}`, `/api/paper/update`, `/api/research/{backtest,evidence,experiments}`.
-- **Owner only:** `POST /api/strategies/{id}/{activate,deactivate,rollback}`, `/api/research/experiments/{id}/approve`, `/api/actions/{reset-kill-switch,acknowledge-loss-streak}`. These require the `X-Owner-Token` header when `TRADEDESK_OWNER_TOKEN` is set.
+Then:
+1. Open **Settings** and enter the missing XAUUSD spec fields from Bybit (TradFi → CFD → XAUUSD+ → Info).
+2. Import history via `POST /api/research/import-csv` (an MT5 export), then run OOS tests.
+3. Activate a strategy only if you choose to.
 
 ## Documents
-
-- [`docs/AUDIT.md`](docs/AUDIT.md): environment, and Bybit CFD facts marked confirmed / reported / unknown
+- [`docs/AUDIT.md`](docs/AUDIT.md): what is confirmed by official sources, what is reported, what is unknown
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): components and enforced invariants
-- [`docs/ROADMAP.md`](docs/ROADMAP.md): stages and what is missing
-
-The earlier crypto-era documents (`STRATEGY.md.`, `RISK_MANAGEMENT.md.`, `TEAM_RULES.md`, …) are kept for history. Where they conflict with this README (exchange choice, Bybit exclusion, 1% risk), the owner directive of 2026-11-19 and this README take precedence.
+- [`docs/DEPLOY.md`](docs/DEPLOY.md): always-on hosting and iPhone access
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): what is done and what is missing

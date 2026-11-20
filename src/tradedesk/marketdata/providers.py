@@ -143,6 +143,7 @@ class DukascopyProvider:
         self.lookback_hours = lookback_hours
         self._last_call = 0.0
         self._backoff_until = 0.0
+        self._cache: dict[tuple[str, datetime], tuple[float, list]] = {}   # completed hours never change
         self.source = DataSource(name="Dukascopy datafeed (public tick history)", is_mock=False)
 
     def supports(self, symbol: str) -> bool:
@@ -170,9 +171,18 @@ class DukascopyProvider:
         return r.content
 
     def ticks_for_hour(self, symbol: str, hour: datetime) -> list[tuple[datetime, float, float]]:
+        key = (symbol, hour)
+        hit = self._cache.get(key)
+        complete = hour + timedelta(hours=2) <= datetime.now(UTC)          # published and final
+        if hit and (complete or time.monotonic() - hit[0] < 120):
+            return hit[1]
         d = self.map[symbol]
         url = f"{self.BASE}/{d}/{hour.year}/{hour.month - 1:02d}/{hour.day:02d}/{hour.hour:02d}h_ticks.bi5"
-        return decode_bi5_ticks(self._fetch(url), hour, DUKA_DIVISOR[d])
+        ticks = decode_bi5_ticks(self._fetch(url), hour, DUKA_DIVISOR[d])
+        if complete and len(self._cache) > 5000:
+            self._cache.clear()
+        self._cache[key] = (time.monotonic(), ticks)
+        return ticks
 
     def quotes(self, symbols: list[str], now: datetime | None = None) -> dict[str, ProviderQuote]:
         now = now or datetime.now(UTC)

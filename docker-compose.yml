@@ -1,0 +1,14 @@
+# docker compose up -d   (requires a .env with TRADEDESK_ACCESS_TOKEN — the app refuses to bind publicly without it)
+services:
+  desk:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TRADEDESK_API_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:8000:8000"     # expose through an HTTPS reverse proxy (Caddy/nginx), not directly
+    volumes:
+      - desk-data:/app/data       # SQLite survives restarts and image upgrades
+volumes:
+  desk-data:

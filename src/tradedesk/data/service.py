@@ -113,7 +113,9 @@ class MarketService:
                 self._status(conn, p.name, True)
             except ProviderError as e:
                 self._status(conn, p.name, False, str(e))
-                db.log_error(conn, f"provider:{p.name}", "WARN", str(e))
+                n = conn.execute("SELECT consecutive_errors FROM provider_status WHERE provider=?", (p.name,)).fetchone()[0]
+                if n in (1, 10, 100) or n % 1000 == 0:      # avoid flooding the error log while a provider is down
+                    db.log_error(conn, f"provider:{p.name}", "WARN", f"{e} (consecutive failures: {n})")
                 continue
             for s, pq in res.items():
                 got[s] = pq

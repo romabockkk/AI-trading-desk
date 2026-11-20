@@ -3,7 +3,7 @@
 ```
  owner ── .env · config/risk_limits.toml · config/agents.toml · approvals (X-Owner-Token)
    │
- Data service (MOCK | future MT5) ─► Validator ─► market_snapshots
+ Quote providers (OANDA v20 | Dukascopy | MT5 read-only | MOCK only if named) ─► Validator ─► latest_quotes, bars, market_snapshots
    │
    ├── Market Structure ─┐
    ├── Quant ────────────┼─ independent strict-JSON reports (agent_reports)
@@ -19,7 +19,7 @@
              │
           Deterministic Risk Gate (36 named checks, all evaluated) ─► ALLOW / DENY  (risk_events)
              │ ALLOW only
-          Execution ─► PaperBroker (PAPER)  |  MT5Adapter (BROKER_DEMO, guarded, BLOCKED)
+          Execution ─► internal PaperBroker only (ledger, margin, commission, swap, SL/TP, stop-out)
              │
           Performance & Learning ─► trades · lessons · experiments · weekly_reviews
 ```
@@ -31,21 +31,22 @@
 | `config.py` | Modes (no LIVE), settings, frozen owner risk limits with sha256 | done, tested |
 | `db/` | SQLite, checksummed forward-only migrations, append-only hash-chained `audit_log` | done, tested |
 | `schemas/` | Pydantic models: market, trading, 8 agent payloads (`extra=forbid`) | done, tested |
-| `safety.py` | DEMO-proof guard for any broker order | done, tested |
 | `data/` | `MockFeed` (labelled MOCK), MT5 CSV importer (server TZ → UTC), validator, resampler, snapshot service | done, tested |
 | `analysis/` | Causal indicators; formal SMC rules MS.SWING/LABEL/TREND/BOS/CHOCH/OB/FVG/SWEEP v1 | done, tested |
 | `strategies/` | 6 strategies with formal rules; no-look-ahead contract | done, tested |
 | `backtest/` | Bar backtester with spread/commission/swap/slippage/latency, walk-forward OOS, bootstrap, Monte Carlo | done, tested |
 | `risk/` | Sizing from contract spec; deterministic Risk Gate | done, tested |
-| `execution/paper.py` | Local simulator: idempotent orders, SL/TP on M5 bars, reconcile, emergency close | done, tested |
+| `execution/paper.py` | Internal PaperBroker: $100 ledger account, bid/ask fills, slippage, commission, tiered margin, swap, stop-out, SL/TP, reset | done, tested |
 | `agents/` | Agent runtime (timeout, retry, schema validation), 8 agents, orchestrator, LLM adapter | done, tested (LLM via fakes only) |
 | `learning/` | Strategy registry (owner-only activate/rollback), experiment pipeline, error taxonomy, weekly review | done, tested |
 | `api/app.py`, `web/index.html` | FastAPI + responsive dashboard, optional scheduler | done, tested + browser-checked |
-| `broker/mt5_adapter.py` | MT5 demo adapter with guards | code + fake-module tests; **never connected** |
+| `marketdata/` | read-only providers (OANDA, Dukascopy, MT5 read-only, MOCK), instrument specs with per-field provenance | done; providers tested with format fixtures, **not verified live** |
+| `runtime.py` | autonomous loops: quote/position monitor, agent cycles, daily/weekly reports | done, tested |
 
 ## Key invariants (each has tests)
 
-- No LIVE mode anywhere; `LIVE` in config or DB is rejected.
+- No LIVE or BROKER_DEMO mode; no order-sending code exists (enforced by a test that scans the source).
+- Mock data and incomplete instrument specs can never lead to a paper trade (Risk Gate QUOTE_REAL / SPEC_COMPLETE).
 - LLMs never produce prices, sizes or orders. An LLM review can only add objections or downgrade to NO_TRADE.
 - Any failed / timed-out / invalid critical agent (Chief, Market Structure, Macro, Risk Manager, Skeptic) ⇒ NO_TRADE.
 - Strategies only see closed candles; a signal at bar *i* fills at bar *i+1* open. Tested by recomputing signals on

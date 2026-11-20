@@ -1,0 +1,17 @@
+# systemd unit for a Linux VPS (copy to /etc/systemd/system/tradedesk.service, then:
+#   systemctl daemon-reload && systemctl enable --now tradedesk)
+[Unit]
+Description=AI paper trading desk (internal PaperBroker, no broker orders)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=desk
+WorkingDirectory=/opt/AI-trading-desk
+EnvironmentFile=/opt/AI-trading-desk/.env
+ExecStart=/opt/AI-trading-desk/scripts/run_api.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

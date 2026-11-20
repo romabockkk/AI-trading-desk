@@ -205,6 +205,12 @@ class ChiefAgent(BaseAgent):
     name = AgentName.CHIEF
 
     def hypothesis(self, ctx: CycleContext) -> dict:
+        snap = ctx.snapshot
+        if not snap.valid or snap.quote is None:
+            errs = sorted({i["code"] for i in snap.issues if i["level"] == "ERROR"})
+            reason = f"market data unavailable or invalid ({', '.join(errs) or 'no data'}; source {snap.source})"
+            return {"hypothesis": f"NO_TRADE: {reason}", "alternative": "wait for valid real-time data",
+                    "proposed_action": "NO_TRADE", "signal": None, "reason": reason}
         q = ctx.payload(AgentName.QUANT) or {}
         msr = ctx.payload(AgentName.MARKET_STRUCTURE) or {}
         h4 = (msr.get("bias_by_timeframe") or {}).get("H4", "UNKNOWN")
