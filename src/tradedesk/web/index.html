@@ -84,6 +84,7 @@ input,select{font:inherit;font-size:16px;padding:7px 9px;border:1px solid var(--
   <section class="full"><h2>Performance (this account)</h2><div class="kpis" id="stats"></div></section>
   <section class="full"><h2>Open positions</h2><div class="tbl" id="positions"></div></section>
   <section class="full"><h2>Can the $ risk budget be respected? (computed live)</h2><div class="tbl" id="feas"></div></section>
+  <section class="full"><h2>Self-check of the running system</h2><div class="row" style="margin-bottom:8px"><button class="b" id="b-check">Run self-check</button><span class="muted" id="checksum"></span></div><div class="tbl" id="checks"></div></section>
 </main>
 
 <main id="mk" class="tab hide">
@@ -92,6 +93,7 @@ input,select{font:inherit;font-size:16px;padding:7px 9px;border:1px solid var(--
     <canvas id="chart"></canvas></section>
   <section><h2>Quotes: source, last update, delay</h2><div class="tbl" id="quotes"></div></section>
   <section><h2>Data providers</h2><div class="tbl" id="providers"></div></section>
+  <section><h2>Stored history (research / backtests only — never used as live quotes)</h2><div class="tbl" id="history"></div></section>
 </main>
 
 <main id="tm" class="tab hide">
@@ -171,6 +173,7 @@ async function load(){
   $("quotes").innerHTML=table(D.quotes,[["Symbol",x=>`<b>${esc(x.symbol)}</b>`],["Status",x=>`<b class="${x.status==="LIVE"?"up":"down"}">${esc(x.status)}</b>`],["Source",x=>esc(x.provider||"—")+(x.is_mock?" (MOCK)":"")],
     ["Bid",x=>num(x.bid,5)],["Ask",x=>num(x.ask,5)],["Quote time",x=>t(x.quote_time_utc)],["Age",x=>x.age_s==null?"—":x.age_s+"s"],["Delivery delay",x=>x.delivery_delay_s==null?"—":x.delivery_delay_s+"s"]]);
   $("providers").innerHTML=table(D.providers,[["Provider",x=>esc(x.provider)],["Last OK",x=>t(x.last_ok_utc)],["Last error",x=>t(x.last_error_utc)],["Errors in a row",x=>x.consecutive_errors],["Error",x=>esc(x.last_error),1]]);
+  $("history").innerHTML=table(D.history,[["Symbol",x=>esc(x.symbol)],["TF",x=>esc(x.timeframe)],["Provider",x=>esc(x.provider)],["Bars",x=>x.bars],["From",x=>t(x.first_utc)],["To",x=>t(x.last_utc)]]);
   $("agents").innerHTML=Object.entries(D.agents).map(([n,x])=>`<div class="agent"><b>${esc(n.replace(/_/g," "))}</b>${x.critical?' <span class="muted">· critical</span>':""}<br>
     <span class="st ${esc(x.status)}">${esc(x.status)}</span> <span class="muted">${t(x.created_utc)}${x.latency_ms!=null?" · "+x.latency_ms+" ms":""}</span>
     <p>${esc(x.error||x.summary||"")}</p>${x.llm_review?`<p>LLM: ${esc(x.llm_review.assessment||x.llm_review.error)}</p>`:""}</div>`).join("");
@@ -201,7 +204,8 @@ function renderSpec(){const s=D.specs.find(x=>x.symbol===$("specsym").value)||D.
     if(!Object.keys(fields).length)return "Nothing changed";const r=await api(`/api/specs/${s.symbol}`,{method:"POST",body:JSON.stringify({fields,source:$("specsrc").value})});return r.complete?"Spec complete":"Saved; still missing: "+r.missing.join(", ")})}
 $("specsym").onchange=renderSpec;
 async function drawChart(){if(!D)return;let c;try{c=await api(`/api/candles?symbol=${encodeURIComponent($("sym").value||"XAUUSD")}&tf=${$("tf").value}&n=120`)}catch(e){return}
-  $("chartsrc").textContent=c.provider?`source: ${c.provider}${c.is_mock?" (MOCK)":""}`:"no data";$("chart-title").textContent=`${c.symbol} ${c.timeframe}`;
+  const hist=c.kind==="HISTORICAL";$("chartsrc").innerHTML=c.provider?`source: ${esc(c.provider)}${c.is_mock?" (MOCK)":""}`+(hist?' · <b class="warn">HISTORICAL data, not live</b>':""):"no data";
+  $("chart-title").textContent=`${c.symbol} ${c.timeframe}`+(hist&&c.candles.length?` — history up to ${c.candles[c.candles.length-1].t.slice(0,16).replace("T"," ")} UTC`:"");
   const cv=$("chart"),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext("2d");g.scale(dpr,dpr);g.clearRect(0,0,W,H);
   const cs=getComputedStyle(document.documentElement),k=c.candles;g.fillStyle=cs.getPropertyValue("--muted");g.font="11px system-ui";if(!k.length){g.fillText("No data from any provider",8,20);return}
   const hi=Math.max(...k.map(x=>x.h)),lo=Math.min(...k.map(x=>x.l)),pad=58,y=v=>8+(hi-v)/(hi-lo||1)*(H-28),w=(W-pad)/k.length;g.strokeStyle=cs.getPropertyValue("--line");
@@ -226,7 +230,10 @@ $("b-review").onclick=e=>act(e.target,async()=>{const r=await post("/api/actions
 document.addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return;
   if(b.dataset.ac){const[s,v]=b.dataset.ac.split("|");const reason=prompt(`Reason for activating ${s} v${v} in PAPER:`);if(!reason)return;act(b,async()=>{await post(`/api/strategies/${s}/activate`,{version:v,reason});return `${s} active`})}
   if(b.dataset.de){act(b,async()=>{await post(`/api/strategies/${b.dataset.de}/deactivate`,{reason:"dashboard"});return "Deactivated"})}});
-load();setInterval(load,20000);
+async function selfCheck(){try{const c=await api("/api/self-check");$("checksum").innerHTML=c.ok?'<b class="up">ALL PASSED</b>':'<b class="down">FAILURES</b>';
+  $("checks").innerHTML=table(c.checks,[["",x=>x.ok?'<b class="up">✓</b>':'<b class="down">✗</b>'],["Check",x=>esc(x.check),1],["Detail",x=>`<span class="muted">${esc(x.detail)}</span>`,1]])}catch(e){toast("Self-check error: "+e.message)}}
+$("b-check").onclick=selfCheck;
+load().then(selfCheck);setInterval(load,20000);
 </script>
 </body>
 </html>

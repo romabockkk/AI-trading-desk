@@ -17,8 +17,8 @@ def _bucket(t: datetime, tf: Timeframe) -> datetime:
 
 
 def resample(m5: list[Candle], tf: Timeframe, as_of: datetime, include_open: bool = False) -> list[Candle]:
-    if tf is Timeframe.M5:
-        return [c for c in m5 if c.open_time_utc + timedelta(minutes=5) <= as_of]
+    if m5 and m5[0].timeframe is tf:
+        return [c for c in m5 if c.open_time_utc + timedelta(seconds=tf.seconds) <= as_of]
     out: list[Candle] = []
     cur: dict | None = None
     for c in m5:

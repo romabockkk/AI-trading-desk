@@ -125,3 +125,15 @@ def test_csv_import_and_review(settings):
         assert r.json()["stored_bars"] == 24 and r.json()["from"].startswith("2026-06-10T07:00")
         w = c.post("/api/actions/review").json()
         assert w["weekly"]["statistically_sufficient"] is False and w["reconcile"]["ok"] and "DAILY REPORT" in w["daily"]["report"]
+
+
+def test_self_check_on_running_system(settings):
+    with client(settings) as c:
+        c.post("/api/actions/analyze-now?symbol=XAUUSD")
+        sc = c.get("/api/self-check").json()
+        by = {x["check"]: x for x in sc["checks"]}
+        assert by["initial balance is $100"]["ok"] and by["balance equals ledger sum"]["ok"]
+        assert by["all 8 agents reported in the last cycle"]["ok"]
+        refusals = [x for x in sc["checks"] if x["check"].startswith("Risk Gate refuses")]
+        assert len(refusals) == 12 and all(x["ok"] for x in refusals)
+        assert sc["ok"] is True

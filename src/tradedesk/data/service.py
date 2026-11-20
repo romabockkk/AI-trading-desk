@@ -155,6 +155,27 @@ class MarketService:
         return out
 
     # ----------------------------------------------------------------- bars
+    def chart_bars(self, conn: sqlite3.Connection, symbol: str, tf: Timeframe, now: datetime, count: int
+                   ) -> tuple[list[Candle], str | None, str]:
+        """Bars for display: live provider if any, else stored history clearly labelled HISTORICAL."""
+        b, prov = self.bars(conn, symbol, tf, now, count)
+        if b:
+            return b[-count:], prov, "LIVE_PROVIDER"
+        for p in HISTORY_PRIORITY[:3]:
+            r = conn.execute("SELECT MAX(open_time_utc) m FROM bars WHERE symbol=? AND timeframe=? AND provider=?",
+                             (symbol, tf.value, p)).fetchone()
+            if r and r["m"]:
+                last = datetime.fromisoformat(r["m"])
+                h, hp = history(conn, symbol, tf, last - timedelta(seconds=tf.seconds * count), last + timedelta(seconds=1))
+                if h:
+                    return h[-count:], hp, "HISTORICAL"
+        if tf is not Timeframe.M1:
+            m1, hp = history(conn, symbol, Timeframe.M1, now - timedelta(days=60), now)
+            if m1:
+                from .resample import resample
+                return resample(m1, tf, m1[-1].open_time_utc + timedelta(minutes=1))[-count:], hp, "HISTORICAL"
+        return [], None, "NONE"
+
     def bars(self, conn: sqlite3.Connection, symbol: str, tf: Timeframe, now: datetime, count: int | None = None
              ) -> tuple[list[Candle], str | None]:
         count = count or BAR_COUNT.get(tf, 500)
@@ -210,7 +231,8 @@ class MarketService:
             b, pn = self.bars(conn, symbol, tf, now)
             bars[tf] = [x for x in b if x.is_closed]
             prov = prov or pn
-            v = validate_candles(bars[tf], tf, now, min_bars=50)
+            # freshness: the last closed bar must be recent (2 bar periods + 10 min), otherwise it is history, not live
+            v = validate_candles(bars[tf], tf, now, min_bars=50, max_age_seconds=2 * tf.seconds + 600)
             issues += [dict(x, timeframe=tf.value) for x in v.as_list()]
         inst, missing = self.instrument(conn, symbol, now)
         tradeable = lt["tradeable"] if lt else None
@@ -270,6 +292,12 @@ def store_bars(conn: sqlite3.Connection, bars: list[Candle], provider: str) -> i
     conn.executemany("INSERT OR REPLACE INTO bars(symbol, timeframe, open_time_utc, provider, o, h, l, c, spread_points, volume)"
                      " VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
     return len(rows)
+
+
+def coverage(conn: sqlite3.Connection) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        "SELECT symbol, timeframe, provider, COUNT(*) bars, MIN(open_time_utc) first_utc, MAX(open_time_utc) last_utc"
+        " FROM bars GROUP BY symbol, timeframe, provider ORDER BY symbol, timeframe, provider")]
 
 
 def history(conn: sqlite3.Connection, symbol: str, tf: Timeframe, start: datetime, end: datetime,

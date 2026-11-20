@@ -109,6 +109,26 @@ class DeskRuntime:
                 conn.close()
         return out
 
+    def update_history(self, days: int = 3) -> list[dict]:
+        """Top up stored Dukascopy history (completed days only). Runs at most once per UTC day."""
+        from .marketdata.dukascopy_history import DukascopyHistory, download
+        from .marketdata.providers import DUKA_DIVISOR
+        out = []
+        conn = self.connect()
+        try:
+            key = "history_update_day"
+            today = self.clock().date().isoformat()
+            if db.get_state(conn, key) == today:
+                return []
+            db.set_state(conn, key, today, "SYSTEM")
+            end = self.clock().date() - timedelta(days=1)
+            for s in self.settings.symbols:
+                if s in DUKA_DIVISOR:
+                    out.append(download(conn, s, end - timedelta(days=days), end, DukascopyHistory()))
+        finally:
+            conn.close()
+        return out
+
     def _reports_if_due(self, conn, now: datetime) -> None:
         acc = self.paper(conn).account_id
         yday = (now - timedelta(days=1)).date().isoformat()
@@ -152,6 +172,8 @@ class DeskRuntime:
         self.state["started_utc"] = self.clock().isoformat()
         self.threads.append(threading.Thread(target=self._loop, args=(self.settings.tradedesk_quote_poll_seconds,
                                                                       self.monitor_once, "monitor"), daemon=True))
+        if self.settings.tradedesk_history_auto:
+            self.threads.append(threading.Thread(target=self._loop, args=(3600, self.update_history, "history"), daemon=True))
         if self.settings.tradedesk_cycle_minutes > 0:
             self.threads.append(threading.Thread(target=self._loop, args=(self.settings.tradedesk_cycle_minutes * 60,
                                                                           self._analysis_tick, "analysis"), daemon=True))

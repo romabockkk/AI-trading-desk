@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     # Autonomy: analysis cycles every N minutes while the server runs (0 = only on demand).
     tradedesk_cycle_minutes: int = Field(default=15, ge=0, le=1440)
     tradedesk_autonomous: bool = True
+    tradedesk_history_auto: bool = True      # top up Dukascopy history once per UTC day (research only)
 
     # Internal paper account (house rules of the PaperBroker; not a broker's terms).
     tradedesk_paper_initial_balance: float = Field(default=100.0, gt=0)

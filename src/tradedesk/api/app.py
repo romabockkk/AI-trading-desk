@@ -258,6 +258,7 @@ def create_app(settings: Settings | None = None, runtime: DeskRuntime | None = N
                 "daily_reports": _rows(conn.execute("SELECT * FROM daily_reports WHERE account_id=? ORDER BY day_utc DESC LIMIT 7", (acc,))),
                 "weekly_reviews": _rows(conn.execute("SELECT * FROM weekly_reviews ORDER BY week_start_utc DESC LIMIT 4")),
                 "specs": [specstore.status(conn, s) for s in r.settings.symbols],
+                "history": dsvc.coverage(conn),
                 "feasibility": feasibility(request, conn)}
 
     @app.get("/api/feasibility")
@@ -305,9 +306,8 @@ def create_app(settings: Settings | None = None, runtime: DeskRuntime | None = N
             t = Timeframe(tf)
         except ValueError:
             raise HTTPException(422, "bad timeframe") from None
-        bars, prov = r.market.bars(conn, symbol, t, r.clock(), max(10, min(n, 500)))
-        bars = bars[-max(10, min(n, 500)):]
-        return {"symbol": symbol, "timeframe": tf, "provider": prov, "is_mock": prov == "MOCK",
+        bars, prov, kind = r.market.chart_bars(conn, symbol, t, r.clock(), max(10, min(n, 500)))
+        return {"symbol": symbol, "timeframe": tf, "provider": prov, "kind": kind, "is_mock": prov == "MOCK",
                 "candles": [{"t": b.open_time_utc.isoformat(), "o": b.open, "h": b.high, "l": b.low, "c": b.close,
                              "closed": b.is_closed} for b in bars]}
 
@@ -323,6 +323,16 @@ def create_app(settings: Settings | None = None, runtime: DeskRuntime | None = N
         return {"cycle_id": cycle_id, "reports": reps,
                 "debate": _rows(conn.execute("SELECT * FROM debates WHERE cycle_id=? ORDER BY seq", (cycle_id,))),
                 "decision": _rows(conn.execute("SELECT * FROM decisions WHERE cycle_id=?", (cycle_id,)))}
+
+    @app.get("/api/self-check")
+    def self_check(request: Request, conn: sqlite3.Connection = Depends(conn_dep)):
+        from ..selfcheck import run as run_selfcheck
+        r = rt(request)
+        return run_selfcheck(conn, r, r.clock())
+
+    @app.get("/api/history/coverage")
+    def history_coverage(conn: sqlite3.Connection = Depends(conn_dep)):
+        return dsvc.coverage(conn)
 
     @app.get("/api/specs")
     def get_specs(request: Request, conn: sqlite3.Connection = Depends(conn_dep)):
